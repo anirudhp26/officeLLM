@@ -1,6 +1,6 @@
 {
   "name": "officellm",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A TypeScript library for multi-model agentic architecture with managers and workers",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -42,9 +42,10 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
     "@google/generative-ai": "^0.24.1",
+    "dotenv": "^17.2.3",
     "openai": "^6.8.1",
     "uuid": "^9.0.1",
-    "zod": "^3.22.4"
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/jest": "^29.5.8",

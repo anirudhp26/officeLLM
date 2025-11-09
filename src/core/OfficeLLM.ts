@@ -1,8 +1,37 @@
+import z from 'zod';
 import { createProvider, IProvider, ProviderMessage } from '../providers';
-import { OfficeLLMConfig, ManagerConfig, WorkerConfig, Task, TaskResult } from '../types';
+import { OfficeLLMConfig, ManagerConfig, WorkerConfig, Task, TaskResult, ToolImplementation } from '../types';
+import { logger } from '../utils/logger';
 
 /**
- * Simplified OfficeLLM with provider-based architecture
+ * OfficeLLM - Multi-Agent AI Framework with Continuous Execution
+ * 
+ * This framework enables building complex AI systems where:
+ * - A manager agent coordinates and delegates tasks to worker agents
+ * - Worker agents have specialized tools and execute autonomously
+ * - Execution continues until agents signal completion (by not calling more tools)
+ * - Users provide tool implementations for maximum flexibility
+ * 
+ * @example
+ * ```typescript
+ * const office = new OfficeLLM({
+ *   manager: { ... },
+ *   workers: [
+ *     {
+ *       name: 'calculator',
+ *       tools: [...],
+ *       toolImplementations: {
+ *         calculate: async (args) => { return result; }
+ *       }
+ *     }
+ *   ]
+ * });
+ * 
+ * const result = await office.executeTask({
+ *   title: 'Task title',
+ *   description: 'Task description'
+ * });
+ * ```
  */
 export class OfficeLLM {
   private manager: ManagerAgent;
@@ -86,54 +115,101 @@ class ManagerAgent {
       parameters: worker.getToolSchema(),
     }));
 
+    const maxIterations = 20; // Safety limit to prevent infinite loops
+    let iteration = 0;
+    let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+
     try {
+      while (iteration < maxIterations) {
+        iteration++;
+        logger.info('MANAGER', `Iteration ${iteration}/${maxIterations}`);
+
       const response = await this.provider.chat(messages, workerTools);
 
-      // If the manager called a worker tool, execute it
-      if (response.toolCalls && response.toolCalls.length > 0) {
-        const toolCall = response.toolCalls[0];
-        const worker = workers.get(toolCall.function.name);
+        // Accumulate usage
+        if (response.usage) {
+          totalUsage.promptTokens += response.usage.promptTokens;
+          totalUsage.completionTokens += response.usage.completionTokens;
+          totalUsage.totalTokens += response.usage.totalTokens;
+        }
 
-        if (worker) {
-          const workerParams = JSON.parse(toolCall.function.arguments);
-          const workerResult = await worker.execute(workerParams);
+        logger.debug('MANAGER', `Response: ${response.content}`);
+        logger.info('MANAGER', `Tool calls requested: ${response.toolCalls?.length || 0}`);
 
-          // Continue conversation with worker result
+        // If no tool calls, the manager has finished
+        if (!response.toolCalls || response.toolCalls.length === 0) {
+          logger.info('MANAGER', 'Task completed - no more tool calls needed');
+          return {
+            success: true,
+            content: response.content,
+            usage: totalUsage,
+          };
+        }
+
+        // Add assistant message to history
           messages.push({
             role: 'assistant',
             content: response.content,
             toolCalls: response.toolCalls,
           });
 
+        // Execute all tool calls (workers)
+        for (const toolCall of response.toolCalls) {
+          const worker = workers.get(toolCall.function.name);
+          
+          if (worker) {
+            logger.info('MANAGER', `Executing worker: ${toolCall.function.name}`);
+            const workerParams = JSON.parse(toolCall.function.arguments);
+            logger.debug('MANAGER', `Worker parameters: ${JSON.stringify(workerParams)}`);
+            
+            const workerResult = await worker.execute(workerParams);
+            
+            logger.debug('MANAGER', `Worker result: ${workerResult.content}`);
+            
+            // Accumulate worker usage
+            if (workerResult.usage) {
+              totalUsage.promptTokens += workerResult.usage.promptTokens;
+              totalUsage.completionTokens += workerResult.usage.completionTokens;
+              totalUsage.totalTokens += workerResult.usage.totalTokens;
+            }
+
+            // Add worker result as tool response
+            messages.push({
+              role: 'tool',
+              content: workerResult.success 
+                ? workerResult.content 
+                : `Error: ${workerResult.error}`,
+              toolCallId: toolCall.id,
+            });
+          } else {
+            // Worker not found - add error message
+            logger.error('MANAGER', `Worker not found: ${toolCall.function.name}`);
           messages.push({
             role: 'tool',
-            content: workerResult.content,
+              content: `Error: Worker '${toolCall.function.name}' not found`,
             toolCallId: toolCall.id,
           });
-
-          // Get final response from manager
-          const finalResponse = await this.provider.chat(messages, workerTools);
-
-          return {
-            success: true,
-            content: finalResponse.content,
-            toolCalls: response.toolCalls,
-            usage: finalResponse.usage,
-          };
+          }
         }
+
+        // Continue to next iteration - manager will decide what to do next
       }
 
+      // Max iterations reached
+      logger.warn('MANAGER', `Maximum iterations (${maxIterations}) reached`);
       return {
         success: true,
-        content: response.content,
-        toolCalls: response.toolCalls,
-        usage: response.usage,
+        content: 'Task execution stopped: Maximum iterations reached. Partial results may be available.',
+        usage: totalUsage,
       };
+
     } catch (error) {
+      logger.error('MANAGER', 'Execution failed', error);
       return {
         success: false,
         content: '',
         error: error instanceof Error ? error.message : 'Unknown error',
+        usage: totalUsage,
       };
     }
   }
@@ -145,10 +221,12 @@ class ManagerAgent {
 class WorkerAgent {
   public config: WorkerConfig;
   private provider: IProvider;
+  private toolImplementations: Record<string, ToolImplementation>;
 
   constructor(config: WorkerConfig) {
     this.config = config;
     this.provider = createProvider(config.provider);
+    this.toolImplementations = config.toolImplementations || {};
   }
 
   /**
@@ -168,22 +246,102 @@ class WorkerAgent {
       },
     ];
 
+    const maxIterations = 15; // Workers have slightly fewer iterations than manager
+    let iteration = 0;
+    let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+
     try {
+      while (iteration < maxIterations) {
+        iteration++;
+        logger.info(`WORKER:${this.config.name}`, `Iteration ${iteration}/${maxIterations}`);
+
       const response = await this.provider.chat(messages, this.config.tools);
 
+        // Accumulate usage
+        if (response.usage) {
+          totalUsage.promptTokens += response.usage.promptTokens;
+          totalUsage.completionTokens += response.usage.completionTokens;
+          totalUsage.totalTokens += response.usage.totalTokens;
+        }
+
+        logger.debug(`WORKER:${this.config.name}`, `Response: ${response.content}`);
+        logger.info(`WORKER:${this.config.name}`, `Tool calls requested: ${response.toolCalls?.length || 0}`);
+
+        // If no tool calls, the worker has finished
+        if (!response.toolCalls || response.toolCalls.length === 0) {
+          logger.info(`WORKER:${this.config.name}`, 'Completed - no more tool calls needed');
+          return {
+            success: true,
+            content: response.content,
+            usage: totalUsage,
+          };
+        }
+
+        // Add assistant message to history
+        messages.push({
+          role: 'assistant',
+          content: response.content,
+          toolCalls: response.toolCalls,
+        });
+
+        // Execute all tool calls
+        for (const toolCall of response.toolCalls) {
+          logger.info(`WORKER:${this.config.name}`, `Executing tool: ${toolCall.function.name}`);
+          
+          const toolResult = await this.executeTool(
+            toolCall.function.name,
+            JSON.parse(toolCall.function.arguments)
+          );
+          
+          logger.debug(`WORKER:${this.config.name}`, `Tool result: ${toolResult}`);
+
+          // Add tool result as tool response
+          messages.push({
+            role: 'tool',
+            content: toolResult,
+            toolCallId: toolCall.id,
+          });
+        }
+
+        // Continue to next iteration - worker will decide what to do next
+      }
+
+      // Max iterations reached
+      logger.warn(`WORKER:${this.config.name}`, `Maximum iterations (${maxIterations}) reached`);
       return {
         success: true,
-        content: response.content,
-        toolCalls: response.toolCalls,
-        usage: response.usage,
+        content: 'Worker execution stopped: Maximum iterations reached. Partial results may be available.',
+        usage: totalUsage,
       };
+
     } catch (error) {
+      logger.error(`WORKER:${this.config.name}`, 'Execution failed', error);
       return {
         success: false,
         content: '',
         error: error instanceof Error ? error.message : 'Unknown error',
+        usage: totalUsage,
       };
     }
+  }
+
+  /**
+   * Execute a tool call (for workers that have access to tools)
+   */
+  private async executeTool(toolName: string, args: Record<string, any>): Promise<string> {
+    // Check if user provided an implementation for this tool
+    if (this.toolImplementations[toolName]) {
+      try {
+        return await this.toolImplementations[toolName](args);
+      } catch (error) {
+        return `Error executing tool "${toolName}": ${error instanceof Error ? error.message : 'Unknown error'}`;
+      }
+    }
+
+    // No implementation provided - return error message
+    const errorMessage = `Tool "${toolName}" has no implementation provided. Please add the tool implementation to the worker configuration.`;
+    logger.error(`WORKER:${this.config.name}`, errorMessage);
+    throw new Error(errorMessage);
   }
 
   /**
@@ -192,20 +350,9 @@ class WorkerAgent {
   getToolSchema() {
     // Create a simple schema from worker parameters
     // In a real implementation, this would be more sophisticated
-    return {
-      type: 'object',
-      properties: {
-        task: {
-          type: 'string',
-          description: 'The task to perform',
-        },
-        priority: {
-          type: 'string',
-          enum: ['low', 'medium', 'high'],
-          description: 'Task priority level',
-        },
-      },
-      required: ['task'],
-    };
+    return z.object({
+      task: z.string().describe('The task to perform'),
+      priority: z.enum(['low', 'medium', 'high']).describe('Task priority level').default('high'),
+    });
   }
 }

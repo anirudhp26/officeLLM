@@ -1,0 +1,461 @@
+---
+title: "Configuration Reference"
+description: "Complete reference for configuring OfficeLLM managers, workers, and tools"
+---
+
+## OfficeLLM Configuration
+
+### Required Fields
+
+```typescript
+interface OfficeLLMConfig {
+  manager: ManagerConfig;      // Required: The coordinating agent
+  workers: WorkerConfig[];      // Required: Array of specialized agents
+}
+```
+
+## Manager Configuration
+
+The manager coordinates tasks and delegates to workers.
+
+### Required Fields
+
+```typescript
+interface ManagerConfig {
+  name: string;                  // Required: Manager identifier
+  description: string;           // Required: What the manager does
+  provider: ProviderConfig;      // Required: LLM provider settings
+  systemPrompt: string;          // Required: Instructions for the manager
+}
+```
+
+### Example
+
+```typescript
+const manager = {
+  name: 'content_manager',
+  description: 'Coordinates content creation workflow',
+  provider: {
+    type: 'gemini' as const,
+    apiKey: process.env.GEMINI_API_KEY!,
+    model: 'gemini-2.5-pro',
+    temperature: 0.7,
+  },
+  systemPrompt: `You are a content production manager.
+
+Your team:
+- research_agent: Gathers information
+- writer_agent: Creates content
+
+Workflow:
+1. Call research_agent to gather information
+2. Call writer_agent with research results
+3. Respond WITHOUT calling workers when complete
+
+IMPORTANT: Signal completion by responding without tool calls.`,
+};
+```
+
+## Worker Configuration
+
+Workers are specialized agents with specific tools.
+
+### Required Fields
+
+```typescript
+interface WorkerConfig {
+  name: string;                    // Required: Worker identifier
+  description: string;             // Required: What the worker does
+  provider: ProviderConfig;        // Required: LLM provider settings
+  systemPrompt: string;            // Required: Instructions for the worker
+  tools: ToolDefinition[];         // Required: Available tools
+  toolImplementations: Record<string, ToolImplementation>;  // Required: Tool functions
+}
+```
+
+### Example
+
+```typescript
+const researchWorker = {
+  name: 'research_agent',
+  description: 'Gathers information from web sources',
+  provider: {
+    type: 'gemini' as const,
+    apiKey: process.env.GEMINI_API_KEY!,
+    model: 'gemini-2.5-flash',
+    temperature: 0.3,
+  },
+  systemPrompt: `You are a research specialist.
+
+Workflow:
+1. Use web_search tool to find information
+2. Review the results
+3. Provide summary WITHOUT calling more tools when done
+
+IMPORTANT: Tool results are complete. Don't repeat the same call.`,
+  
+  tools: [
+    {
+      name: 'web_search',
+      description: 'Search the web for information',
+      parameters: z.object({
+        query: z.string().describe('Search query'),
+        limit: z.number().min(1).max(10).default(3),
+      }),
+    },
+  ],
+  
+  toolImplementations: {
+    web_search: async (args) => {
+      // YOUR implementation
+      const results = await yourSearchAPI(args.query, args.limit);
+      return formatResults(results);
+    },
+  },
+};
+```
+
+## Tool Definitions
+
+Tools define what actions workers can perform.
+
+### Format
+
+```typescript
+interface ToolDefinition {
+  name: string;                    // Tool identifier
+  description: string;             // What the tool does
+  parameters: z.ZodObject<any>;    // Zod schema for parameters
+}
+```
+
+### Example
+
+```typescript
+{
+  name: 'calculate',
+  description: 'Perform mathematical calculations',
+  parameters: z.object({
+    expression: z.string().describe('Math expression to evaluate'),
+    precision: z.number().min(0).max(10).default(2).describe('Decimal places'),
+  }),
+}
+```
+
+## Tool Implementations
+
+Tool implementations are the actual functions that execute when tools are called.
+
+### Format
+
+```typescript
+type ToolImplementation = (args: Record<string, any>) => Promise<string>;
+```
+
+### Example
+
+```typescript
+toolImplementations: {
+  calculate: async (args) => {
+    const { expression, precision = 2 } = args;
+    try {
+      const result = eval(expression); // Use math.js in production
+      return `Result: ${expression} = ${result.toFixed(precision)}`;
+    } catch (error) {
+      return `Error: ${error.message}`;
+    }
+  },
+  
+  web_search: async (args) => {
+    const results = await fetch(`https://api.example.com/search?q=${args.query}`);
+    const data = await results.json();
+    return JSON.stringify(data);
+  },
+}
+```
+
+## Provider Configuration
+
+### OpenAI
+
+```typescript
+{
+  type: 'openai' as const,
+  apiKey: string,                  // Required
+  model: string,                   // Required: 'gpt-4', 'gpt-3.5-turbo', etc.
+  temperature?: number,            // Optional: 0-1, default 0.7
+  maxTokens?: number,              // Optional: max response length
+  topP?: number,                   // Optional: 0-1
+  frequencyPenalty?: number,       // Optional: -2 to 2
+  presencePenalty?: number,        // Optional: -2 to 2
+}
+```
+
+### Anthropic
+
+```typescript
+{
+  type: 'anthropic' as const,
+  apiKey: string,                  // Required
+  model: string,                   // Required: 'claude-3-opus-20240229', etc.
+  temperature?: number,            // Optional: 0-1, default 0.7
+  maxTokens?: number,              // Optional: max response length
+  topP?: number,                   // Optional: 0-1
+  topK?: number,                   // Optional: sampling parameter
+}
+```
+
+### Google Gemini
+
+```typescript
+{
+  type: 'gemini' as const,
+  apiKey: string,                  // Required
+  model: string,                   // Required: 'gemini-2.5-pro', 'gemini-2.5-flash'
+  temperature?: number,            // Optional: 0-1, default 0.7
+  maxTokens?: number,              // Optional: max response length
+  topP?: number,                   // Optional: 0-1
+  topK?: number,                   // Optional: sampling parameter
+}
+```
+
+### OpenRouter
+
+```typescript
+{
+  type: 'openrouter' as const,
+  apiKey: string,                  // Required
+  model: string,                   // Required: 'anthropic/claude-3-opus', etc.
+  temperature?: number,            // Optional: 0-1, default 0.7
+  maxTokens?: number,              // Optional: max response length
+}
+```
+
+## Task Format
+
+Tasks are the input to `executeTask()`.
+
+```typescript
+interface Task {
+  title: string;                   // Required: Task name
+  description: string;             // Required: Detailed instructions
+  priority?: 'low' | 'medium' | 'high';  // Optional: default 'medium'
+  [key: string]: any;              // Optional: additional parameters
+}
+```
+
+### Example
+
+```typescript
+await office.executeTask({
+  title: 'Create blog post',
+  description: 'Write a blog post about AI agents',
+  priority: 'high',
+});
+```
+
+## Task Result Format
+
+The return value from `executeTask()`.
+
+```typescript
+interface TaskResult {
+  success: boolean;                // Whether task completed successfully
+  content: string;                 // The result content
+  usage?: {                        // Token usage statistics
+    promptTokens: number,
+    completionTokens: number,
+    totalTokens: number,
+  };
+  error?: string;                  // Error message if failed
+}
+```
+
+### Example
+
+```typescript
+const result = await office.executeTask(task);
+
+console.log(result.success);     // true
+console.log(result.content);     // "Here is your blog post..."
+console.log(result.usage);       // { promptTokens: 150, ... }
+```
+
+## System Prompt Best Practices
+
+### Manager Prompts
+
+```typescript
+systemPrompt: `You are a [role].
+
+Your team:
+- worker_1: [description]
+- worker_2: [description]
+
+Workflow:
+1. [Step 1]
+2. Call appropriate workers
+3. Review results
+4. When complete, respond WITHOUT calling more workers
+
+IMPORTANT: Signal completion by responding without tool calls.`
+```
+
+### Worker Prompts
+
+```typescript
+systemPrompt: `You are a [specialized role].
+
+Your tools:
+- tool_1: [description]
+- tool_2: [description]
+
+Workflow:
+1. Understand the task
+2. Use your tools as needed
+3. Review tool results (they are complete)
+4. When done, respond WITHOUT calling more tools
+
+IMPORTANT: 
+- Tool results contain all the data you need
+- Don't repeat the same tool call
+- Signal completion by responding without tool calls`
+```
+
+## Complete Example
+
+```typescript
+import { OfficeLLM } from 'officellm';
+import { z } from 'zod';
+
+const office = new OfficeLLM({
+  manager: {
+    name: 'project_manager',
+    description: 'Coordinates research and writing tasks',
+    provider: {
+      type: 'gemini',
+      apiKey: process.env.GEMINI_API_KEY!,
+      model: 'gemini-2.5-pro',
+      temperature: 0.7,
+    },
+    systemPrompt: `You coordinate research and writing agents.
+    
+    Workflow:
+    1. Call research_agent to gather information
+    2. Call writer_agent with research results
+    3. Respond with summary when complete`,
+  },
+  
+  workers: [
+    {
+      name: 'research_agent',
+      description: 'Searches for information',
+      provider: {
+        type: 'gemini',
+        apiKey: process.env.GEMINI_API_KEY!,
+        model: 'gemini-2.5-flash',
+      },
+      systemPrompt: 'Use web_search to find information. Provide findings when done.',
+      tools: [
+        {
+          name: 'web_search',
+          description: 'Search the web',
+          parameters: z.object({
+            query: z.string(),
+            limit: z.number().default(3),
+          }),
+        },
+      ],
+      toolImplementations: {
+        web_search: async (args) => {
+          // Implementation
+          return `Found ${args.limit} results for: ${args.query}`;
+        },
+      },
+    },
+    
+    {
+      name: 'writer_agent',
+      description: 'Creates content',
+      provider: {
+        type: 'gemini',
+        apiKey: process.env.GEMINI_API_KEY!,
+        model: 'gemini-2.5-flash',
+      },
+      systemPrompt: 'Generate content and save with write_file. Confirm when done.',
+      tools: [
+        {
+          name: 'write_file',
+          description: 'Save content to file',
+          parameters: z.object({
+            filename: z.string(),
+            content: z.string(),
+          }),
+        },
+      ],
+      toolImplementations: {
+        write_file: async (args) => {
+          // Implementation
+          return `Saved ${args.filename}`;
+        },
+      },
+    },
+  ],
+});
+
+const result = await office.executeTask({
+  title: 'Create article',
+  description: 'Research and write about AI agents',
+  priority: 'high',
+});
+```
+
+## Common Patterns
+
+### Multiple Tools Per Worker
+
+```typescript
+tools: [
+  {
+    name: 'search',
+    description: 'Search for information',
+    parameters: z.object({ query: z.string() }),
+  },
+  {
+    name: 'summarize',
+    description: 'Summarize text',
+    parameters: z.object({ text: z.string() }),
+  },
+],
+toolImplementations: {
+  search: async (args) => { /* ... */ },
+  summarize: async (args) => { /* ... */ },
+}
+```
+
+### Optional Tool Parameters
+
+```typescript
+parameters: z.object({
+  query: z.string(),                          // Required
+  limit: z.number().default(10),              // Optional with default
+  filter: z.string().optional(),              // Optional without default
+  sort: z.enum(['date', 'relevance']).default('relevance'),
+})
+```
+
+### Complex Tool Parameters
+
+```typescript
+parameters: z.object({
+  search: z.object({
+    query: z.string(),
+    options: z.object({
+      limit: z.number(),
+      filter: z.array(z.string()),
+    }),
+  }),
+  format: z.enum(['json', 'text', 'markdown']),
+})
+```
+

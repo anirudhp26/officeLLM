@@ -1,54 +1,29 @@
 ---
 title: "Introduction"
-description: "A simplified framework for building multi-agent AI systems with type safety and extensibility"
+description: "A TypeScript framework for building multi-agent AI systems with continuous execution"
 ---
 
-# officeLLM
+# OfficeLLM
 
-A TypeScript library for building multi-agent AI systems with manager and worker agents that coordinate tasks using different LLM providers.
+A TypeScript framework for building multi-agent AI systems where a manager coordinates specialized worker agents that autonomously use tools to complete tasks.
 
-## What is officeLLM?
+## What is OfficeLLM?
 
-officeLLM provides a clean, extensible framework for creating intelligent multi-agent systems where:
+OfficeLLM provides a framework for creating multi-agent systems:
 
-- **Manager Agents** coordinate and delegate tasks to specialized workers
+- **Manager Agent** coordinates and delegates tasks to specialized workers
 - **Worker Agents** execute specific tasks using their own tools and LLM providers
-- **Extensible Provider System** supports OpenAI, Anthropic, Gemini, and OpenRouter
-- **Type Safety** with Zod schemas for all tool parameters
-- **FunctionDefinitions Format** compatible with AI package tool calling
+- **Provider Support** for OpenAI, Anthropic, Gemini, and OpenRouter
+- **Type Safety** with Zod schemas for tool parameters
+- **Continuous Execution** where agents work until completion
 
 ## Key Features
 
-<Cards>
-  <Card
-    title="Multi-Agent Architecture"
-    icon="users"
-    href="/core-concepts/architecture"
-  >
-    Managers orchestrate teams of specialized worker agents
-  </Card>
-  <Card
-    title="Provider Agnostic"
-    icon="globe"
-    href="/core-concepts/providers"
-  >
-    Support for OpenAI, Anthropic, Gemini, and OpenRouter
-  </Card>
-  <Card
-    title="Type Safe"
-    icon="check"
-    href="/core-concepts/architecture"
-  >
-    Zod schemas ensure type safety for all tool parameters
-  </Card>
-  <Card
-    title="Extensible"
-    icon="plus"
-    href="/contributing/extending-providers"
-  >
-    Easy to add new providers and customize behavior
-  </Card>
-</Cards>
+- **Multi-Agent**: Manager orchestrates specialized worker agents
+- **Provider Agnostic**: OpenAI, Anthropic, Gemini, and OpenRouter
+- **Type Safe**: Zod schemas for all tool parameters
+- **User-Defined Tools**: Bring your own tool implementations
+- **Extensible**: Add new providers and customize behavior
 
 ## Quick Example
 
@@ -116,60 +91,23 @@ const result = await office.executeTask({
 console.log('Result:', result.content);
 ```
 
-## Why officeLLM?
+## Why OfficeLLM?
 
-<Tip>
-  **Simplified Architecture**: No complex parameter passing - just function calls between agents
-</Tip>
+- **Simplified Architecture**: Workers are called like functions
+- **Type Safety**: Zod validates all tool parameters
+- **Provider Agnostic**: Easy to switch between LLM providers
+- **Extensible**: Adding new providers is straightforward
 
-<Info>
-  **Type Safety**: Zod schemas ensure all tool parameters are properly validated
-</Info>
+## How It Works
 
-<Warning>
-  **Provider Agnostic**: Easy to switch between different LLM providers
-</Warning>
-
-<Check>
-  **Extensible**: Adding new providers requires minimal code changes
-</Check>
-
-## Architecture Overview
-
-```mermaid
-flowchart TD
-    %% Define styles
-    classDef userNode fill:#007bff,color:#ffffff,stroke:#0056b3,stroke-width:2px
-    classDef managerNode fill:#28a745,color:#ffffff,stroke:#1e7e34,stroke-width:3px
-    classDef workerNode fill:#6c757d,color:#ffffff,stroke:#495057,stroke-width:2px
-
-    %% Flow diagram
-    A(["fa:fa-user User Task"]):::userNode
-    A --> B(["fa:fa-cogs Manager Agent<br/>System Prompt<br/>Provider<br/>Worker Tools"])
-
-    B --> C(["fa:fa-tools Worker Agent<br/>System Prompt<br/>Provider<br/>Tools"])
-    B --> D(["fa:fa-tools Worker Agent<br/>System Prompt<br/>Provider<br/>Tools"])
-    B --> E(["fa:fa-tools Worker Agent<br/>System Prompt<br/>Provider<br/>Tools"])
-
-    %% Apply styles
-    B:::managerNode
-    C:::workerNode
-    D:::workerNode
-    E:::workerNode
-```
-
-The manager receives tasks and decides which worker agents to call, while each worker agent has its own specialized tools and LLM provider configuration.
+1. **User submits a task** to the manager via `executeTask()`
+2. **Manager analyzes the task** and calls appropriate worker agents
+3. **Workers execute tasks** using their specialized tools
+4. **Manager synthesizes results** and returns to the user
 
 ## Next Steps
 
-<CardGroup>
-  <Card title="Quick Start" icon="zap" href="/quick-start">
-    Get up and running in minutes
-  </Card>
-  <Card title="Installation" icon="download" href="/installation">
-    Install officeLLM in your project
-  </Card>
-  <Card title="Core Concepts" icon="book" href="/core-concepts/architecture">
-    Understand the architecture
-  </Card>
-</CardGroup>
+- [Quick Start](/quick-start) - Get up and running
+- [Installation](/installation) - Install OfficeLLM
+- [Configuration](/configuration) - Complete configuration reference
+- [API Reference](/api/officeLLM) - Full API documentation

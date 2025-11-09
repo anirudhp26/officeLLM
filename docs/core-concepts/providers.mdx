@@ -1,46 +1,42 @@
 ---
 title: "Providers"
-description: "officeLLM supports multiple LLM providers through an extensible provider system. Each agent can use different providers independently."
+description: "LLM provider configuration reference"
 ---
 
 ## Supported Providers
 
-### OpenAI
+OfficeLLM supports multiple LLM providers. Each agent can use a different provider.
 
-<ParamField body="openai" required>
-  Provider type identifier
-</ParamField>
+### OpenAI
 
 ```typescript
 provider: {
   type: 'openai' as const,
   apiKey: process.env.OPENAI_API_KEY!,
   model: 'gpt-4',
-  temperature: 0.7,
-  maxTokens: 2000,
+  temperature: 0.7,              // Optional: 0-1, default 0.7
+  maxTokens: 2000,                // Optional: max response length
+  topP: 0.9,                      // Optional: nucleus sampling
+  frequencyPenalty: 0,            // Optional: -2 to 2
+  presencePenalty: 0,             // Optional: -2 to 2
 }
 ```
 
 **Supported Models:**
-- `gpt-4`
-- `gpt-4-turbo`
-- `gpt-4-turbo-preview`
-- `gpt-3.5-turbo`
-- `gpt-3.5-turbo-16k`
+- `gpt-4`, `gpt-4-turbo`, `gpt-4-turbo-preview`
+- `gpt-3.5-turbo`, `gpt-3.5-turbo-16k`
 
 ### Anthropic
-
-<ParamField body="anthropic" required>
-  Provider type identifier
-</ParamField>
 
 ```typescript
 provider: {
   type: 'anthropic' as const,
   apiKey: process.env.ANTHROPIC_API_KEY!,
   model: 'claude-3-sonnet-20240229',
-  temperature: 0.7,
-  maxTokens: 4096,
+  temperature: 0.7,              // Optional: 0-1, default 0.7
+  maxTokens: 4096,                // Optional: max response length
+  topP: 0.9,                      // Optional: nucleus sampling
+  topK: 40,                       // Optional: top-k sampling
 }
 ```
 
@@ -49,170 +45,46 @@ provider: {
 - `claude-3-sonnet-20240229`
 - `claude-3-haiku-20240307`
 - `claude-3-5-sonnet-20240620`
-- `claude-2.1`
-- `claude-2`
-- `claude-instant-1.2`
 
 ### Google Gemini
-
-<ParamField body="gemini" required>
-  Provider type identifier
-</ParamField>
 
 ```typescript
 provider: {
   type: 'gemini' as const,
   apiKey: process.env.GEMINI_API_KEY!,
-  model: 'gemini-pro',
-  temperature: 0.7,
-  maxTokens: 2048,
+  model: 'gemini-2.5-pro',
+  temperature: 0.7,              // Optional: 0-1, default 0.7
+  maxTokens: 2048,                // Optional: max response length
+  topP: 0.8,                      // Optional: nucleus sampling
+  topK: 10,                       // Optional: top-k sampling
 }
 ```
 
 **Supported Models:**
-- `gemini-pro`
-- `gemini-pro-vision`
-- `gemini-1.5-pro`
-- `gemini-1.5-flash`
+- `gemini-2.5-pro`, `gemini-2.5-flash`
+- `gemini-pro`, `gemini-pro-vision`
 
 ### OpenRouter
-
-<ParamField body="openrouter" required>
-  Provider type identifier
-</ParamField>
 
 ```typescript
 provider: {
   type: 'openrouter' as const,
   apiKey: process.env.OPENROUTER_API_KEY!,
   model: 'anthropic/claude-3-sonnet',
-  temperature: 0.7,
-  maxTokens: 4096,
+  temperature: 0.7,              // Optional: 0-1, default 0.7
+  maxTokens: 4096,                // Optional: max response length
 }
 ```
 
 **Popular Models:**
-- `openai/gpt-4`
-- `anthropic/claude-3-opus`
-- `anthropic/claude-3-sonnet`
-- `meta-llama/llama-2-70b-chat`
+- `openai/gpt-4`, `openai/gpt-3.5-turbo`
+- `anthropic/claude-3-opus`, `anthropic/claude-3-sonnet`
 - `google/gemini-pro`
-
-## Provider Configuration
-
-All providers share a common configuration interface:
-
-```typescript
-interface BaseProviderConfig {
-  type: ProviderType;
-  apiKey: string;
-  model: string;
-  temperature?: number;    // 0-1, defaults to 0.7
-  maxTokens?: number;     // Maximum response length
-  // Provider-specific options...
-}
-```
-
-## Adding Custom Providers
-
-### 1. Create Provider Class
-
-```typescript
-import { BaseProvider, ProviderResponse, ProviderMessage, ToolDefinition } from 'officellm';
-
-export class CustomProvider extends BaseProvider {
-  constructor(config: CustomConfig) {
-    super(config);
-  }
-
-  async chat(
-    messages: ProviderMessage[],
-    tools?: ToolDefinition[]
-  ): Promise<ProviderResponse> {
-    // Implement your provider logic here
-    const response = await this.callCustomAPI(messages, tools);
-
-    return {
-      content: response.text,
-      toolCalls: response.toolCalls,
-      usage: response.usage,
-    };
-  }
-
-  getSupportedModels(): string[] {
-    return ['custom-model-1', 'custom-model-2'];
-  }
-
-  private async callCustomAPI(messages: ProviderMessage[], tools?: ToolDefinition[]) {
-    // Your API implementation
-  }
-}
-```
-
-### 2. Define Configuration Type
-
-```typescript
-export interface CustomConfig extends BaseProviderConfig {
-  type: 'custom';
-  customOption: string;
-  // Add custom configuration options
-}
-```
-
-### 3. Register Provider
-
-```typescript
-import { ProviderFactory } from 'officellm';
-
-ProviderFactory.register('custom', CustomProvider);
-```
-
-### 4. Use the Provider
-
-```typescript
-const manager = {
-  name: 'Manager',
-  provider: {
-    type: 'custom' as const,
-    apiKey: 'your-key',
-    model: 'custom-model-1',
-    customOption: 'value',
-  },
-  // ... rest of config
-};
-```
-
-## Provider Selection Guidelines
-
-### For Different Use Cases
-
-**Creative Tasks:**
-- Anthropic Claude models (excellent for reasoning and creativity)
-- OpenAI GPT-4 (versatile for various tasks)
-
-**Analytical Tasks:**
-- OpenAI GPT-4 (precise and analytical)
-- Anthropic Claude (strong mathematical reasoning)
-
-**Code Generation:**
-- OpenAI GPT-4 (excellent code generation)
-- Anthropic Claude (good for code explanation)
-
-**Cost Optimization:**
-- Anthropic Claude 3 Haiku (fast and cost-effective)
-- OpenAI GPT-3.5-turbo (budget-friendly)
-
-### Performance Comparison
-
-| Provider | Speed | Cost | Reasoning | Creativity |
-|----------|-------|------|-----------|------------|
-| OpenAI GPT-4 | Medium | High | Excellent | Excellent |
-| Claude 3 Opus | Slow | High | Excellent | Excellent |
-| Claude 3 Sonnet | Medium | Medium | Very Good | Very Good |
-| Claude 3 Haiku | Fast | Low | Good | Good |
-| Gemini Pro | Medium | Low | Good | Good |
+- `meta-llama/llama-2-70b-chat`
 
 ## Environment Variables
+
+Create a `.env` file:
 
 ```bash
 # OpenAI
@@ -228,33 +100,173 @@ GEMINI_API_KEY=...
 OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-## Error Handling
+## Provider Selection Guide
 
-Providers include built-in error handling:
+### By Use Case
 
-- **Rate Limits**: Automatic retry with exponential backoff
-- **Network Errors**: Graceful failure with error messages
-- **Invalid API Keys**: Clear error messages
-- **Model Not Found**: Fallback suggestions
+**Creative/Writing Tasks**
+- `claude-3-opus` or `claude-3-sonnet` (excellent reasoning)
+- `gpt-4` (versatile)
 
-## Mock Providers
+**Analytical/Math Tasks**
+- `gpt-4` (precise)
+- `claude-3-sonnet` (good reasoning)
 
-For development and testing, officeLLM includes mock implementations:
+**Fast/Cost-Effective**
+- `claude-3-haiku` (fastest, cheapest)
+- `gpt-3.5-turbo` (good balance)
+- `gemini-2.5-flash` (fast, cheap)
+
+**Maximum Quality**
+- `claude-3-opus` (best reasoning)
+- `gpt-4-turbo` (very capable)
+- `gemini-2.5-pro` (strong performance)
+
+### By Provider
+
+**OpenAI**
+- Wide model selection
+- Excellent for code generation
+- Reliable function calling
+
+**Anthropic**
+- Strong reasoning capabilities
+- Good for complex tasks
+- Excellent safety features
+
+**Google Gemini**
+- Cost-effective
+- Fast inference
+- Good for high-volume tasks
+
+**OpenRouter**
+- Access to multiple providers
+- One API for many models
+- Flexible pricing
+
+## Mixed Provider Setup
+
+Each agent can use a different provider:
 
 ```typescript
-// All providers work without API keys in mock mode
 const office = new OfficeLLM({
   manager: {
-    name: 'Test Manager',
+    name: 'Manager',
     provider: {
-      type: 'openai' as const,
-      apiKey: 'mock-key', // Mock implementations ignore this
-      model: 'gpt-4',
+      type: 'anthropic',
+      apiKey: process.env.ANTHROPIC_API_KEY!,
+      model: 'claude-3-sonnet-20240229',
+      temperature: 0.7,
     },
-    // ... config
+    // ...
   },
-  workers: [],
+  workers: [
+    {
+      name: 'Researcher',
+      provider: {
+        type: 'openai',
+        apiKey: process.env.OPENAI_API_KEY!,
+        model: 'gpt-4',
+        temperature: 0.3,  // Lower for research
+      },
+      // ...
+    },
+    {
+      name: 'Writer',
+      provider: {
+        type: 'gemini',
+        apiKey: process.env.GEMINI_API_KEY!,
+        model: 'gemini-2.5-pro',
+        temperature: 0.9,  // Higher for creativity
+      },
+      // ...
+    },
+  ],
 });
 ```
 
-Mock providers return realistic responses for testing workflows.
+## Cost Optimization
+
+### Use Cheaper Models Where Appropriate
+
+```typescript
+// Manager: Use stronger model for coordination
+manager: {
+  provider: { type: 'anthropic', model: 'claude-3-opus' },  // Expensive
+}
+
+// Workers: Use cheaper models for specific tasks
+workers: [
+  {
+    name: 'simple_task_worker',
+    provider: { type: 'anthropic', model: 'claude-3-haiku' },  // Cheap
+  },
+  {
+    name: 'complex_task_worker',
+    provider: { type: 'anthropic', model: 'claude-3-sonnet' },  // Medium
+  },
+]
+```
+
+### Adjust Temperature
+
+```typescript
+// Low temperature (0.1-0.3) for deterministic tasks
+provider: { temperature: 0.1 }  // Math, data analysis, code
+
+// Medium temperature (0.5-0.7) for balanced tasks
+provider: { temperature: 0.7 }  // General purpose
+
+// High temperature (0.8-1.0) for creative tasks
+provider: { temperature: 0.9 }  // Creative writing, brainstorming
+```
+
+### Set Token Limits
+
+```typescript
+provider: {
+  maxTokens: 500,  // Limit response length to reduce costs
+}
+```
+
+## Error Handling
+
+All providers include built-in error handling:
+
+```typescript
+try {
+  const result = await office.executeTask(task);
+} catch (error) {
+  // Common errors:
+  // - Invalid API key
+  // - Rate limits exceeded
+  // - Model not found
+  // - Network errors
+  console.error('Task failed:', error.message);
+}
+```
+
+## Adding Custom Providers
+
+See [Extending Providers](/contributing/extending-providers) for how to add support for new LLM providers.
+
+## Provider Interface
+
+All providers implement the same interface:
+
+```typescript
+interface IProvider {
+  readonly type: ProviderType;
+  readonly config: BaseProviderConfig;
+
+  chat(
+    messages: ProviderMessage[],
+    tools?: ToolDefinition[]
+  ): Promise<ProviderResponse>;
+
+  isAvailable(): Promise<boolean>;
+  getSupportedModels(): string[];
+}
+```
+
+This ensures consistency across all providers.

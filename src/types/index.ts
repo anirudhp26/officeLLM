@@ -2,7 +2,6 @@
  * Core type definitions for the officeLLM multi-agent architecture
  */
 
-import { z } from 'zod';
 import { ProviderConfig, ToolDefinition } from '../providers';
 
 /**
@@ -110,7 +109,15 @@ export interface ManagerConfig {
   description: string;
   provider: ProviderConfig;
   systemPrompt: string;
-  tools: ToolDefinition[];
+
+  /**
+   * @deprecated - tools are no longer supported (workers are served as tools to the manager)
+   */
+  // tools?: ToolDefinition[];
+}
+
+export interface ToolImplementation {
+  (args: any): Promise<string>;
 }
 
 /**
@@ -121,7 +128,29 @@ export interface WorkerConfig {
   description?: string;
   provider: ProviderConfig;
   systemPrompt: string;
-  tools: ToolDefinition[];
+  tools?: ToolDefinition[];
+  /**
+   * Tool implementations - USER MUST PROVIDE
+   * 
+   * Map of tool names to their implementations. Each tool defined in `tools`
+   * The parameters of each tool must be a ZodSchema.
+   * MUST have a corresponding implementation here.
+   * 
+   * @example
+   * ```typescript
+   * toolImplementations: {
+   *   web_search: async (args) => {
+   *     const results = await searchAPI(args.query);
+   *     return formatResults(results);
+   *   },
+   *   calculate: async (args) => {
+   *     const result = math.evaluate(args.expression);
+   *     return `Result: ${result}`;
+   *   }
+   * }
+   * ```
+   */
+  toolImplementations?: Record<string, ToolImplementation>;
 }
 
 /**

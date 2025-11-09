@@ -16,7 +16,7 @@ Get started with officeLLM by building a simple multi-agent system in just a few
 ## 1. Installation
 
 ```bash
-npm install officellm zod
+npm install officellm zod@^4.0.0
 ```
 
 ## 2. Set up environment variables
@@ -84,17 +84,7 @@ Available workers:
 - math_solver: For mathematical problems and calculations
 
 When given a task, analyze it and delegate to the appropriate worker agent.
-Always provide clear instructions and coordinate between workers when needed.`,
-  tools: [
-    {
-      name: 'math_solver',
-      description: 'Delegate mathematical tasks to the math expert',
-      parameters: z.object({
-        task: z.string().describe('The mathematical task to solve'),
-        priority: z.enum(['low', 'medium', 'high']).default('medium'),
-      }),
-    },
-  ],
+Always provide clear instructions and coordinate between workers when needed.`
 };
 ```
 
@@ -147,45 +137,21 @@ Usage: { promptTokens: 150, completionTokens: 200, totalTokens: 350 }
 
 ## Next Steps
 
-<CardGroup>
-  <Card title="Add More Workers" icon="user-plus" href="/examples/basic-usage">
-    Create more specialized worker agents
-  </Card>
-  <Card title="Custom Providers" icon="settings" href="/contributing/extending-providers">
-    Add support for new LLM providers
-  </Card>
-  <Card title="API Reference" icon="code" href="/api/officeLLM">
-    Explore the full API
-  </Card>
-</CardGroup>
+- [Configuration Reference](/configuration) - Complete configuration guide
+- [Basic Usage Examples](/examples/basic-usage) - More examples
+- [API Reference](/api/officeLLM) - Full API documentation
+- [Add Custom Providers](/contributing/extending-providers) - Extend the framework
 
-## Troubleshooting
-
-### Common Issues
+## Common Issues
 
 **"Provider type not registered"**
-- Make sure you're using a supported provider type: `'openai' | 'anthropic' | 'gemini' | 'openrouter'`
-- Check that your API key is properly set
+- Use supported types: `'openai' | 'anthropic' | 'gemini' | 'openrouter'`
+- Check API key is set
 
 **"Task execution failed"**
-- Verify your API keys are valid and have sufficient credits
-- Check that the provider model you specified is available
-- Ensure your system prompts are well-formed
+- Verify API keys are valid
+- Check the model name is correct
+- Review system prompts
 
 **TypeScript errors**
-- Make sure you're using TypeScript 4.5+
-- Import types correctly: `import { OfficeLLM } from 'officellm'`
 - Use `as const` for provider types: `type: 'openai' as const`
-
-### Debug Mode
-
-Enable debug logging:
-
-```typescript
-// Add to your environment
-process.env.DEBUG = 'officellm:*';
-
-// Or enable in your code
-import { OfficeLLM } from 'officellm';
-OfficeLLM.setDebug(true);
-```

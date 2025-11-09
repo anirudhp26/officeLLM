@@ -34,5 +34,8 @@ export {
   TaskResult,
 } from './types';
 
+// Logger utility
+export { logger, Logger, LogLevel } from './utils/logger';
+
 // Re-export zod for convenience
 export { z } from 'zod';

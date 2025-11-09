@@ -1,232 +1,377 @@
 ---
 title: "Architecture"
-description: "officeLLM implements a clean, simplified multi-agent architecture where a manager agent coordinates specialized worker agents through function calls."
+description: "How OfficeLLM implements multi-agent coordination"
 ---
 
-## How It Works
+## Overview
 
-```mermaid
-flowchart TD
-    %% Define styles
-    classDef userNode fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef managerNode fill:#f3e5f5,stroke:#4a148c,stroke-width:3px
-    classDef workerNode fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
-    classDef resultNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+OfficeLLM uses a manager-worker pattern where a manager agent coordinates specialized worker agents through function calling.
 
-    %% Flow diagram
-    A(["fa:fa-user User<br/>Task Input"]):::userNode
-    A -->|"1 Submit Task"| B(["fa:fa-cogs Manager Agent<br/>Analyzes, Delegates, Synthesizes"])
-
-    B -->|"2 Delegate"| C(["fa:fa-calculator Math Worker<br/>Specialized Computation"])
-    B -->|"2 Delegate"| D(["fa:fa-search Research Worker<br/>Information Gathering"])
-    B -->|"2 Delegate"| E(["fa:fa-pen Writer Worker<br/>Content Creation"])
-
-    C -->|"3 Return Results"| B
-    D -->|"3 Return Results"| B
-    E -->|"3 Return Results"| B
-
-    B -->|"4 Final Result"| F(["fa:fa-check-circle Result<br/>Final Output"]):::resultNode
-
-    %% Apply styles
-    B:::managerNode
-    C:::workerNode
-    D:::workerNode
-    E:::workerNode
+```
+User Task → Manager → Worker(s) → Manager → Final Result
 ```
 
-### 1. Task Submission
-Users submit tasks to the **Manager Agent** through the `executeTask()` method.
-
-### 2. Manager Analysis
-The manager uses its LLM to analyze the task and determine which worker agents to call.
-
-### 3. Worker Delegation
-Workers are registered as "tools" in the manager's configuration. The manager calls workers like function tools.
-
-### 4. Worker Execution
-Each worker agent executes its specialized task using its own LLM provider and tools.
-
-### 5. Result Synthesis
-The manager combines worker results and provides the final response to the user.
-
-## Core Components
+## Components
 
 ### OfficeLLM Class
 
-The main orchestrator that initializes and manages the manager and worker agents.
+The main entry point that initializes and manages agents.
 
 ```typescript
 const office = new OfficeLLM({
-  manager: {
-    name: 'Project Manager',
-    provider: { type: 'anthropic', apiKey: '...', model: 'claude-3-sonnet' },
-    systemPrompt: 'You coordinate AI workers...',
-    tools: [
-      {
-        name: 'math_solver',
-        description: 'Solve math problems',
-        parameters: z.object({ task: z.string() }),
-      },
-    ],
-  },
-  workers: [
-    {
-      name: 'Math Solver',
-      provider: { type: 'openai', apiKey: '...', model: 'gpt-4' },
-      systemPrompt: 'You solve math problems...',
-      tools: [/* worker's own tools */],
-    },
-  ],
+  manager: managerConfig,
+  workers: [worker1, worker2],
 });
 ```
 
 ### Manager Agent
 
-**Role**: Task coordinator and delegator
+**Role**: Coordinates tasks and delegates to workers
 
-- **Receives**: User tasks
-- **Analyzes**: Task requirements using LLM
-- **Delegates**: To appropriate worker agents
-- **Synthesizes**: Final results
+The manager:
+1. Receives user tasks
+2. Analyzes requirements
+3. Calls appropriate workers (workers are registered as tools)
+4. Synthesizes results
+5. Returns final output
 
-**Key Feature**: Workers are registered as "tools" that the manager can call.
+```typescript
+const manager = {
+  name: 'project_manager',
+  description: 'Coordinates AI workers',
+  provider: { type: 'gemini', apiKey: '...', model: 'gemini-2.5-pro' },
+  systemPrompt: `You coordinate AI agents...
+
+Workflow:
+1. Analyze the task
+2. Call appropriate workers
+3. Review results
+4. Respond WITHOUT calling workers when done`,
+};
+```
 
 ### Worker Agent
 
-**Role**: Specialized task execution
+**Role**: Execute specialized tasks using tools
 
-- **Receives**: Delegated tasks from manager
-- **Executes**: Using domain-specific tools
-- **Returns**: Results to manager
+Workers:
+1. Receive delegated tasks from manager
+2. Use their specialized tools
+3. Return results to manager
 
-**Key Feature**: Each worker has its own LLM provider and tool set.
+```typescript
+const worker = {
+  name: 'research_agent',
+  description: 'Searches for information',
+  provider: { type: 'gemini', apiKey: '...', model: 'gemini-2.5-flash' },
+  systemPrompt: `You search for information...
 
-## Task Flow Example
+Workflow:
+1. Use your tools
+2. Review results
+3. Respond WITHOUT calling tools when done`,
+  tools: [/* tool definitions */],
+  toolImplementations: {/* your functions */},
+};
+```
 
-```mermaid
-flowchart TD
-    %% Define styles
-    classDef userNode fill:#007bff,color:#ffffff,stroke:#0056b3,stroke-width:2px
-    classDef methodNode fill:#e9ecef,color:#495057,stroke:#6c757d,stroke-width:2px
-    classDef managerNode fill:#28a745,color:#ffffff,stroke:#1e7e34,stroke-width:3px
-    classDef workerNode fill:#6c757d,color:#ffffff,stroke:#495057,stroke-width:2px
-    classDef processNode fill:#17a2b8,color:#ffffff,stroke:#117a8b,stroke-width:2px
-    classDef resultNode fill:#007bff,color:#ffffff,stroke:#0056b3,stroke-width:2px
+## Execution Flow
 
-    %% Flow diagram
-    A(["fa:fa-user User"]):::userNode
-    A -->|"Submit"| B(["fa:fa-code executeTask()"]):::methodNode
-    B --> C(["fa:fa-cogs Manager<br/>Agent"]):::managerNode
+### 1. Task Submission
 
-    C -->|"Delegate"| D(["fa:fa-calculator Math<br/>Worker"]):::workerNode
-    C -->|"Delegate"| E(["fa:fa-search Research<br/>Worker"]):::workerNode
+```typescript
+const result = await office.executeTask({
+  title: 'Create report',
+  description: 'Research topic X and write a report',
+  priority: 'high',
+});
+```
 
-    D -->|"Results"| F(["fa:fa-sync Synthesize<br/>Results"]):::processNode
-    E -->|"Results"| F
+### 2. Manager Processing
 
-    F -->|"Final"| G(["fa:fa-check-circle Result"]):::resultNode
+The manager's LLM decides which workers to call:
 
-    %% Apply styles
-    A:::userNode
-    B:::methodNode
-    C:::managerNode
-    D:::workerNode
-    E:::workerNode
-    F:::processNode
-    G:::resultNode
+```typescript
+// Manager internally calls:
+{
+  toolCalls: [
+    {
+      function: {
+        name: 'research_agent',
+        arguments: '{"task":"Research topic X","priority":"high"}'
+      }
+    }
+  ]
+}
+```
+
+### 3. Worker Execution
+
+The research worker executes:
+
+```typescript
+// Worker uses its tools:
+{
+  toolCalls: [
+    {
+      function: {
+        name: 'web_search',
+        arguments: '{"query":"topic X","limit":5}'
+      }
+    }
+  ]
+}
+
+// Tool implementation runs:
+toolImplementations.web_search({ query: "topic X", limit: 5 })
+// Returns: "Found 5 results..."
+
+// Worker sees the result and responds:
+"Based on my research, topic X involves..."
+```
+
+### 4. Manager Synthesis
+
+Manager receives worker result and may:
+- Call more workers if needed
+- Respond with final result when complete
+
+## Continuous Execution
+
+Agents execute continuously until they signal completion by responding without making tool/worker calls.
+
+**Manager completes** when:
+- It responds without calling any workers
+
+**Worker completes** when:
+- It responds without calling any tools
+
+### Example Flow
+
+```
+1. User → Manager: "Create a blog post about AI"
+
+2. Manager calls research_agent:
+   task="Research AI trends"
+
+3. research_agent calls web_search tool:
+   query="AI trends 2024"
+   
+4. web_search returns results
+
+5. research_agent responds with findings
+   (no more tool calls = complete)
+
+6. Manager calls writer_agent:
+   task="Write blog post"
+   content="[research findings]"
+
+7. writer_agent calls generate_content tool
+
+8. Tool returns formatted blog post
+
+9. writer_agent calls write_file tool
+
+10. Tool saves file
+
+11. writer_agent responds with confirmation
+    (no more tool calls = complete)
+
+12. Manager responds with summary
+    (no more worker calls = complete)
+
+13. User receives final result
 ```
 
 ## Provider Independence
 
-Each agent can use different LLM providers independently:
+Each agent can use a different LLM provider:
 
 ```typescript
 const office = new OfficeLLM({
   manager: {
     name: 'Manager',
-    provider: { type: 'anthropic', model: 'claude-3-sonnet' }, // Anthropic
+    provider: { type: 'anthropic', model: 'claude-3-opus' },  // Anthropic
   },
   workers: [
     {
-      name: 'Math',
-      provider: { type: 'openai', model: 'gpt-4' }, // OpenAI
-    },
-    {
-      name: 'Research',
-      provider: { type: 'gemini', model: 'gemini-pro' }, // Google
+      name: 'Researcher',
+      provider: { type: 'openai', model: 'gpt-4' },  // OpenAI
     },
     {
       name: 'Writer',
-      provider: { type: 'openrouter', model: 'anthropic/claude-3-haiku' }, // OpenRouter
+      provider: { type: 'gemini', model: 'gemini-2.5-pro' },  // Google
     },
   ],
 });
 ```
 
-## Function Call Pattern
+## Worker Registration
 
-Workers are called like function tools:
+Workers are registered as "tools" that the manager can call:
 
 ```typescript
-// Manager's perspective
-tools: [
-  {
-    name: 'math_solver',        // Function name
-    description: 'Solve math',  // Function description
-    parameters: {               // Function parameters
-      task: z.string(),
-      priority: z.enum(['low', 'medium', 'high']),
-    },
+// Internally, workers become tool definitions:
+{
+  name: 'research_agent',
+  description: 'Searches for information',
+  parameters: {
+    task: string,
+    priority: 'low' | 'medium' | 'high',
+  }
+}
+
+// Manager's LLM sees this and can call it like a function
+```
+
+## Safety Features
+
+**Iteration Limits**
+- Manager: 20 iterations max
+- Workers: 15 iterations max
+- Prevents infinite loops
+
+**Error Handling**
+- Graceful failures at all levels
+- Clear error messages
+- Usage tracking even on errors
+
+**Missing Implementations**
+```typescript
+// If a tool has no implementation:
+toolImplementations: {
+  // web_search missing!
+}
+
+// Clear error:
+Error: Tool "web_search" has no implementation provided.
+```
+
+## Message Format
+
+### Between User and Manager
+
+```typescript
+// Input
+{
+  title: string,
+  description: string,
+  priority?: 'low' | 'medium' | 'high'
+}
+
+// Output
+{
+  success: boolean,
+  content: string,
+  usage: { promptTokens, completionTokens, totalTokens },
+  error?: string
+}
+```
+
+### Between Manager and Workers
+
+```typescript
+// Manager calls worker with parameters matching the worker's schema
+{
+  task: string,
+  priority: 'high'
+}
+
+// Worker returns plain text result
+"Here are my findings: ..."
+```
+
+### Between Workers and Tools
+
+```typescript
+// Worker calls tool
+{
+  function: {
+    name: 'web_search',
+    arguments: '{"query":"AI","limit":5}'
+  }
+}
+
+// Tool implementation returns string
+async web_search(args) {
+  return "Found 5 results: ...";
+}
+```
+
+## Best Practices
+
+### Manager System Prompts
+
+```typescript
+systemPrompt: `You are a [role].
+
+Available workers:
+- worker_1: [what it does]
+- worker_2: [what it does]
+
+Workflow:
+1. Analyze task
+2. Call appropriate workers
+3. Review results
+4. Call more workers if needed
+5. Respond WITHOUT calling workers when complete
+
+IMPORTANT: Signal completion by responding without tool calls.`
+```
+
+### Worker System Prompts
+
+```typescript
+systemPrompt: `You are a [role].
+
+Your tools:
+- tool_1: [what it does]
+- tool_2: [what it does]
+
+Workflow:
+1. Understand the task
+2. Use tools as needed
+3. Review tool results (they are complete - don't repeat calls)
+4. Respond WITHOUT calling tools when done
+
+IMPORTANT: 
+- Tool results contain all data
+- Don't make the same tool call twice
+- Signal completion by responding without tool calls`
+```
+
+### Tool Return Values
+
+Tools should return:
+- **Complete information** in the response
+- **Formatted strings** that are easy to read
+- **Error messages** when something fails
+
+```typescript
+toolImplementations: {
+  web_search: async (args) => {
+    try {
+      const results = await search(args.query);
+      return `Found ${results.length} results:\n${formatResults(results)}`;
+    } catch (error) {
+      return `Error searching: ${error.message}`;
+    }
   },
-]
-
-// Manager calls worker
-await manager.chat(messages, tools);
-// Result: { toolCalls: [{ name: 'math_solver', arguments: '{"task":"..."}' }] }
+}
 ```
 
-## Type Safety
+## Direct Worker Access
 
-All interactions are type-safe using Zod schemas:
+You can call workers directly, bypassing the manager:
 
 ```typescript
-// Tool parameters
-const mathParams = z.object({
-  expression: z.string().describe('Math expression'),
-  precision: z.number().min(0).max(10).default(2),
-});
-
-// Task definitions
-const task = z.object({
-  title: z.string(),
-  description: z.string(),
-  priority: z.enum(['low', 'medium', 'high']).optional(),
+const result = await office.callWorker('research_agent', {
+  task: 'Research topic X',
+  priority: 'high',
 });
 ```
 
-## Error Handling
-
-Built-in error handling for production use:
-
-- **Provider failures**: Automatic retries with backoff
-- **Network issues**: Graceful degradation
-- **Invalid parameters**: Zod validation errors
-- **Rate limits**: Respectful API usage
-
-## Extensibility
-
-Easy to extend with new capabilities:
-
-- **New Providers**: Register with `ProviderFactory.register()`
-- **New Tools**: Define with Zod schemas
-- **Custom Workers**: Add specialized agents
-- **Enhanced Managers**: Custom coordination logic
-
-## Performance
-
-Designed for efficient execution:
-
-- **Concurrent tasks**: Multiple workers can run simultaneously
-- **Provider optimization**: Choose appropriate models for tasks
-- **Resource management**: Respect API limits and costs
-- **Monitoring**: Track usage and performance metrics
+This is useful for:
+- Testing individual workers
+- Building custom workflows
+- Debugging worker behavior

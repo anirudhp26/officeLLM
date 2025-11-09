@@ -10,26 +10,26 @@ Install officeLLM in your TypeScript or JavaScript project.
 ## Package Installation
 
 ```bash
-npm install officellm zod
+npm install officellm zod@^4.0.0
 ```
 
 or
 
 ```bash
-yarn add officellm zod
+yarn add officellm zod@^4.0.0
 ```
 
 or
 
 ```bash
-pnpm add officellm zod
+pnpm add officellm zod@^4.0.0
 ```
 
 ## Peer Dependencies
 
 officeLLM requires the following peer dependencies:
 
-- **zod**: `^3.22.4` - For type validation and schemas
+- **zod**: `^4.0.0` - For type validation and schemas
 - **Node.js**: `>=18.0.0` - For ES modules support
 
 ## Provider SDKs (Optional)
@@ -79,65 +79,6 @@ ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here
 GEMINI_API_KEY=your-gemini-key-here
 OPENROUTER_API_KEY=sk-or-v1-your-openrouter-key-here
 ```
-
-## Verification
-
-Create a simple test file to verify your installation:
-
-```typescript
-// test.ts
-import { OfficeLLM } from 'officellm';
-import { z } from 'zod';
-
-const manager = {
-  name: 'Test Manager',
-  provider: {
-    type: 'openai' as const,
-    apiKey: process.env.OPENAI_API_KEY || '',
-    model: 'gpt-4',
-  },
-  systemPrompt: 'You are a test manager.',
-  tools: [],
-};
-
-const office = new OfficeLLM({
-  manager,
-  workers: [],
-});
-
-console.log('✅ officeLLM installed successfully!');
-console.log('Manager:', office.getManager());
-```
-
-Run the test:
-
-```bash
-npx tsx test.ts
-```
-
-You should see:
-```
-✅ officeLLM installed successfully!
-Manager: { name: 'Test Manager', description: undefined }
-```
-
-## IDE Support
-
-### VS Code
-
-Install the recommended extensions:
-
-- **TypeScript Importer** - For auto-imports
-- **Zod** - For Zod schema IntelliSense
-
-### Auto-completion
-
-officeLLM provides full TypeScript intellisense for:
-
-- Provider configurations
-- Tool definitions
-- Zod schemas
-- Method signatures
 
 ## Next Steps
 

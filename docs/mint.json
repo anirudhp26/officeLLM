@@ -21,8 +21,9 @@
       "group": "Getting Started",
       "pages": [
         "introduction",
+        "installation",
         "quick-start",
-        "installation"
+        "configuration"
       ]
     },
     {

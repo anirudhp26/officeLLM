@@ -45,7 +45,7 @@ export interface ToolCall {
 export interface ToolDefinition {
   name: string;
   description: string;
-  parameters: z.ZodSchema<any> | Record<string, any>;
+  parameters: z.ZodObject<any>;
 }
 
 /**
