@@ -1,0 +1,357 @@
+---
+title: "Providers API"
+description: "API reference for LLM provider implementations"
+---
+
+## BaseProvider
+
+Abstract base class for all LLM providers.
+
+```typescript
+abstract class BaseProvider implements IProvider {
+  readonly type: ProviderType;
+  readonly config: BaseProviderConfig;
+
+  constructor(config: BaseProviderConfig)
+
+  abstract chat(messages: ProviderMessage[], tools?: ToolDefinition[]): Promise<ProviderResponse>
+  abstract getSupportedModels(): string[]
+  isAvailable(): Promise<boolean>
+}
+```
+
+### Properties
+
+- **`type`**: The provider type identifier (`'openai' | 'anthropic' | 'gemini' | 'openrouter'`)
+- **`config`**: Provider configuration object
+
+### Methods
+
+#### `chat(messages, tools?)`
+Send a chat completion request to the LLM provider.
+
+**Parameters:**
+- `messages`: Array of `ProviderMessage` objects
+- `tools?`: Optional array of `ToolDefinition` objects
+
+**Returns:** `Promise<ProviderResponse>`
+
+#### `getSupportedModels()`
+Get list of supported model names for this provider.
+
+**Returns:** `string[]` - Array of model identifiers
+
+#### `isAvailable()`
+Check if the provider is available and properly configured.
+
+**Returns:** `Promise<boolean>`
+
+## Provider Types
+
+### ProviderType
+
+```typescript
+type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'openrouter';
+```
+
+### BaseProviderConfig
+
+```typescript
+interface BaseProviderConfig {
+  type: ProviderType;
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  // Provider-specific options...
+}
+```
+
+### ProviderMessage
+
+```typescript
+interface ProviderMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  toolCalls?: ToolCall[];
+  toolCallId?: string;
+}
+```
+
+### ToolDefinition
+
+```typescript
+interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: z.ZodSchema<any> | Record<string, any>;
+}
+```
+
+### ToolCall
+
+```typescript
+interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+```
+
+### ProviderResponse
+
+```typescript
+interface ProviderResponse {
+  content: string;
+  toolCalls?: ToolCall[];
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  finishReason: string;
+}
+```
+
+## Specific Providers
+
+### OpenAIProvider
+
+```typescript
+class OpenAIProvider extends BaseProvider {
+  constructor(config: OpenAIConfig)
+}
+```
+
+**Configuration:**
+```typescript
+interface OpenAIConfig extends BaseProviderConfig {
+  type: 'openai';
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+}
+```
+
+**Supported Models:**
+- `gpt-4`
+- `gpt-4-turbo`
+- `gpt-4-turbo-preview`
+- `gpt-3.5-turbo`
+- `gpt-3.5-turbo-16k`
+
+### AnthropicProvider
+
+```typescript
+class AnthropicProvider extends BaseProvider {
+  constructor(config: AnthropicConfig)
+}
+```
+
+**Configuration:**
+```typescript
+interface AnthropicConfig extends BaseProviderConfig {
+  type: 'anthropic';
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  topK?: number;
+}
+```
+
+**Supported Models:**
+- `claude-3-opus-20240229`
+- `claude-3-sonnet-20240229`
+- `claude-3-haiku-20240307`
+- `claude-3-5-sonnet-20240620`
+- `claude-2.1`
+- `claude-2`
+- `claude-instant-1.2`
+
+### GeminiProvider
+
+```typescript
+class GeminiProvider extends BaseProvider {
+  constructor(config: GeminiConfig)
+}
+```
+
+**Configuration:**
+```typescript
+interface GeminiConfig extends BaseProviderConfig {
+  type: 'gemini';
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  topK?: number;
+}
+```
+
+**Supported Models:**
+- `gemini-pro`
+- `gemini-pro-vision`
+- `gemini-1.5-pro`
+- `gemini-1.5-flash`
+
+### OpenRouterProvider
+
+```typescript
+class OpenRouterProvider extends BaseProvider {
+  constructor(config: OpenRouterConfig)
+}
+```
+
+**Configuration:**
+```typescript
+interface OpenRouterConfig extends BaseProviderConfig {
+  type: 'openrouter';
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+}
+```
+
+**Popular Models:**
+- `openai/gpt-4`
+- `anthropic/claude-3-opus`
+- `anthropic/claude-3-sonnet`
+- `meta-llama/llama-2-70b-chat`
+- `google/gemini-pro`
+
+## ProviderFactory
+
+Factory class for creating and managing provider instances.
+
+```typescript
+class ProviderFactory {
+  static register<T extends BaseProviderConfig>(
+    type: ProviderType,
+    ProviderClass: new (config: T) => IProvider
+  ): void
+
+  static create(config: ProviderConfig): IProvider
+  static getRegisteredTypes(): ProviderType[]
+  static isRegistered(type: ProviderType): boolean
+  static getSupportedModels(type: ProviderType): string[]
+}
+```
+
+### Methods
+
+#### `register(type, ProviderClass)`
+Register a new provider type.
+
+**Parameters:**
+- `type`: Provider type identifier
+- `ProviderClass`: Provider class constructor
+
+#### `create(config)`
+Create a provider instance from configuration.
+
+**Parameters:**
+- `config`: Provider configuration object
+
+**Returns:** `IProvider` instance
+
+#### `getRegisteredTypes()`
+Get all registered provider types.
+
+**Returns:** `ProviderType[]`
+
+#### `isRegistered(type)`
+Check if a provider type is registered.
+
+**Parameters:**
+- `type`: Provider type to check
+
+**Returns:** `boolean`
+
+#### `getSupportedModels(type)`
+Get supported models for a provider type.
+
+**Parameters:**
+- `type`: Provider type
+
+**Returns:** `string[]` - Array of model names
+
+## Usage Examples
+
+### Creating a Provider
+
+```typescript
+import { ProviderFactory } from 'officellm';
+
+// Create OpenAI provider
+const openaiProvider = ProviderFactory.create({
+  type: 'openai',
+  apiKey: process.env.OPENAI_API_KEY!,
+  model: 'gpt-4',
+  temperature: 0.7,
+});
+
+// Create Anthropic provider
+const anthropicProvider = ProviderFactory.create({
+  type: 'anthropic',
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  model: 'claude-3-sonnet-20240229',
+  temperature: 0.7,
+});
+```
+
+### Using a Provider
+
+```typescript
+const messages = [
+  { role: 'system', content: 'You are a helpful assistant.' },
+  { role: 'user', content: 'Hello!' },
+];
+
+const response = await provider.chat(messages);
+console.log(response.content);
+```
+
+### Registering a Custom Provider
+
+```typescript
+import { ProviderFactory, BaseProvider, BaseProviderConfig } from 'officellm';
+
+class CustomProvider extends BaseProvider {
+  constructor(config: CustomProviderConfig) {
+    super(config);
+  }
+
+  async chat(messages, tools?) {
+    // Custom implementation
+    return { content: 'Response from custom provider' };
+  }
+
+  getSupportedModels() {
+    return ['custom-model-1', 'custom-model-2'];
+  }
+}
+
+// Register the provider
+ProviderFactory.register('custom', CustomProvider);
+
+// Now you can use it
+const customProvider = ProviderFactory.create({
+  type: 'custom',
+  apiKey: 'custom-key',
+  model: 'custom-model-1',
+});
+```

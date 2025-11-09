@@ -1,0 +1,232 @@
+---
+title: "Architecture"
+description: "officeLLM implements a clean, simplified multi-agent architecture where a manager agent coordinates specialized worker agents through function calls."
+---
+
+## How It Works
+
+```mermaid
+flowchart TD
+    %% Define styles
+    classDef userNode fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef managerNode fill:#f3e5f5,stroke:#4a148c,stroke-width:3px
+    classDef workerNode fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+    classDef resultNode fill:#fff3e0,stroke:#e65100,stroke-width:2px
+
+    %% Flow diagram
+    A(["fa:fa-user User<br/>Task Input"]):::userNode
+    A -->|"1 Submit Task"| B(["fa:fa-cogs Manager Agent<br/>Analyzes, Delegates, Synthesizes"])
+
+    B -->|"2 Delegate"| C(["fa:fa-calculator Math Worker<br/>Specialized Computation"])
+    B -->|"2 Delegate"| D(["fa:fa-search Research Worker<br/>Information Gathering"])
+    B -->|"2 Delegate"| E(["fa:fa-pen Writer Worker<br/>Content Creation"])
+
+    C -->|"3 Return Results"| B
+    D -->|"3 Return Results"| B
+    E -->|"3 Return Results"| B
+
+    B -->|"4 Final Result"| F(["fa:fa-check-circle Result<br/>Final Output"]):::resultNode
+
+    %% Apply styles
+    B:::managerNode
+    C:::workerNode
+    D:::workerNode
+    E:::workerNode
+```
+
+### 1. Task Submission
+Users submit tasks to the **Manager Agent** through the `executeTask()` method.
+
+### 2. Manager Analysis
+The manager uses its LLM to analyze the task and determine which worker agents to call.
+
+### 3. Worker Delegation
+Workers are registered as "tools" in the manager's configuration. The manager calls workers like function tools.
+
+### 4. Worker Execution
+Each worker agent executes its specialized task using its own LLM provider and tools.
+
+### 5. Result Synthesis
+The manager combines worker results and provides the final response to the user.
+
+## Core Components
+
+### OfficeLLM Class
+
+The main orchestrator that initializes and manages the manager and worker agents.
+
+```typescript
+const office = new OfficeLLM({
+  manager: {
+    name: 'Project Manager',
+    provider: { type: 'anthropic', apiKey: '...', model: 'claude-3-sonnet' },
+    systemPrompt: 'You coordinate AI workers...',
+    tools: [
+      {
+        name: 'math_solver',
+        description: 'Solve math problems',
+        parameters: z.object({ task: z.string() }),
+      },
+    ],
+  },
+  workers: [
+    {
+      name: 'Math Solver',
+      provider: { type: 'openai', apiKey: '...', model: 'gpt-4' },
+      systemPrompt: 'You solve math problems...',
+      tools: [/* worker's own tools */],
+    },
+  ],
+});
+```
+
+### Manager Agent
+
+**Role**: Task coordinator and delegator
+
+- **Receives**: User tasks
+- **Analyzes**: Task requirements using LLM
+- **Delegates**: To appropriate worker agents
+- **Synthesizes**: Final results
+
+**Key Feature**: Workers are registered as "tools" that the manager can call.
+
+### Worker Agent
+
+**Role**: Specialized task execution
+
+- **Receives**: Delegated tasks from manager
+- **Executes**: Using domain-specific tools
+- **Returns**: Results to manager
+
+**Key Feature**: Each worker has its own LLM provider and tool set.
+
+## Task Flow Example
+
+```mermaid
+flowchart TD
+    %% Define styles
+    classDef userNode fill:#007bff,color:#ffffff,stroke:#0056b3,stroke-width:2px
+    classDef methodNode fill:#e9ecef,color:#495057,stroke:#6c757d,stroke-width:2px
+    classDef managerNode fill:#28a745,color:#ffffff,stroke:#1e7e34,stroke-width:3px
+    classDef workerNode fill:#6c757d,color:#ffffff,stroke:#495057,stroke-width:2px
+    classDef processNode fill:#17a2b8,color:#ffffff,stroke:#117a8b,stroke-width:2px
+    classDef resultNode fill:#007bff,color:#ffffff,stroke:#0056b3,stroke-width:2px
+
+    %% Flow diagram
+    A(["fa:fa-user User"]):::userNode
+    A -->|"Submit"| B(["fa:fa-code executeTask()"]):::methodNode
+    B --> C(["fa:fa-cogs Manager<br/>Agent"]):::managerNode
+
+    C -->|"Delegate"| D(["fa:fa-calculator Math<br/>Worker"]):::workerNode
+    C -->|"Delegate"| E(["fa:fa-search Research<br/>Worker"]):::workerNode
+
+    D -->|"Results"| F(["fa:fa-sync Synthesize<br/>Results"]):::processNode
+    E -->|"Results"| F
+
+    F -->|"Final"| G(["fa:fa-check-circle Result"]):::resultNode
+
+    %% Apply styles
+    A:::userNode
+    B:::methodNode
+    C:::managerNode
+    D:::workerNode
+    E:::workerNode
+    F:::processNode
+    G:::resultNode
+```
+
+## Provider Independence
+
+Each agent can use different LLM providers independently:
+
+```typescript
+const office = new OfficeLLM({
+  manager: {
+    name: 'Manager',
+    provider: { type: 'anthropic', model: 'claude-3-sonnet' }, // Anthropic
+  },
+  workers: [
+    {
+      name: 'Math',
+      provider: { type: 'openai', model: 'gpt-4' }, // OpenAI
+    },
+    {
+      name: 'Research',
+      provider: { type: 'gemini', model: 'gemini-pro' }, // Google
+    },
+    {
+      name: 'Writer',
+      provider: { type: 'openrouter', model: 'anthropic/claude-3-haiku' }, // OpenRouter
+    },
+  ],
+});
+```
+
+## Function Call Pattern
+
+Workers are called like function tools:
+
+```typescript
+// Manager's perspective
+tools: [
+  {
+    name: 'math_solver',        // Function name
+    description: 'Solve math',  // Function description
+    parameters: {               // Function parameters
+      task: z.string(),
+      priority: z.enum(['low', 'medium', 'high']),
+    },
+  },
+]
+
+// Manager calls worker
+await manager.chat(messages, tools);
+// Result: { toolCalls: [{ name: 'math_solver', arguments: '{"task":"..."}' }] }
+```
+
+## Type Safety
+
+All interactions are type-safe using Zod schemas:
+
+```typescript
+// Tool parameters
+const mathParams = z.object({
+  expression: z.string().describe('Math expression'),
+  precision: z.number().min(0).max(10).default(2),
+});
+
+// Task definitions
+const task = z.object({
+  title: z.string(),
+  description: z.string(),
+  priority: z.enum(['low', 'medium', 'high']).optional(),
+});
+```
+
+## Error Handling
+
+Built-in error handling for production use:
+
+- **Provider failures**: Automatic retries with backoff
+- **Network issues**: Graceful degradation
+- **Invalid parameters**: Zod validation errors
+- **Rate limits**: Respectful API usage
+
+## Extensibility
+
+Easy to extend with new capabilities:
+
+- **New Providers**: Register with `ProviderFactory.register()`
+- **New Tools**: Define with Zod schemas
+- **Custom Workers**: Add specialized agents
+- **Enhanced Managers**: Custom coordination logic
+
+## Performance
+
+Designed for efficient execution:
+
+- **Concurrent tasks**: Multiple workers can run simultaneously
+- **Provider optimization**: Choose appropriate models for tasks
+- **Resource management**: Respect API limits and costs
+- **Monitoring**: Track usage and performance metrics

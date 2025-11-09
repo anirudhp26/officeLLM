@@ -1,0 +1,302 @@
+---
+title: "Managers API"
+description: "API reference for manager agent functionality"
+---
+
+## ManagerAgent Class
+
+The ManagerAgent class handles task coordination and worker delegation.
+
+```typescript
+class ManagerAgent {
+  public config: ManagerConfig;
+  private provider: IProvider;
+
+  constructor(config: ManagerConfig)
+  executeTask(task: Task, workers: Map<string, WorkerAgent>): Promise<TaskResult>
+}
+```
+
+### Constructor
+
+```typescript
+new ManagerAgent(config: ManagerConfig)
+```
+
+Creates a new manager agent instance.
+
+**Parameters:**
+- `config`: Manager configuration object
+
+### Properties
+
+- **`config`**: The manager configuration object
+- **`provider`**: Internal LLM provider instance (private)
+
+### Methods
+
+#### `executeTask(task, workers)`
+
+Execute a task by coordinating with worker agents.
+
+**Parameters:**
+- `task`: Task object with title, description, and priority
+- `workers`: Map of worker name to WorkerAgent instance
+
+**Returns:** `Promise<TaskResult>` - Task execution result
+
+## ManagerConfig Interface
+
+Configuration object for manager agents.
+
+```typescript
+interface ManagerConfig {
+  name: string;
+  description?: string;
+  provider: ProviderConfig;
+  systemPrompt: string;
+  tools: ToolDefinition[];
+}
+```
+
+### Properties
+
+- **`name`**: Human-readable name for the manager
+- **`description`**: Optional description of the manager's role
+- **`provider`**: LLM provider configuration
+- **`systemPrompt`**: System prompt defining the manager's behavior
+- **`tools`**: Array of tool definitions (typically worker agents)
+
+## Task Execution Flow
+
+The manager follows this execution pattern:
+
+1. **Receive Task**: Manager gets a task from the user
+2. **Analyze Requirements**: Use LLM to understand task requirements
+3. **Select Worker**: Determine which worker agent(s) to call
+4. **Generate Tool Call**: Create function call to worker agent
+5. **Execute Worker**: Call the selected worker agent
+6. **Process Result**: Receive and process worker response
+7. **Synthesize Output**: Generate final response for user
+
+## Tool Integration
+
+Managers integrate workers as tools:
+
+```typescript
+const managerConfig = {
+  name: 'Project Manager',
+  provider: { type: 'anthropic', apiKey: '...', model: 'claude-3-sonnet' },
+  systemPrompt: 'You coordinate AI workers...',
+  tools: [
+    {
+      name: 'math_solver',
+      description: 'Solve math problems',
+      parameters: z.object({
+        task: z.string(),
+        priority: z.enum(['low', 'medium', 'high']),
+      }),
+    },
+    {
+      name: 'research_assistant',
+      description: 'Conduct research',
+      parameters: z.object({
+        query: z.string(),
+      }),
+    },
+  ],
+};
+```
+
+## Error Handling
+
+Manager agents include built-in error handling:
+
+- **Provider Errors**: Automatic retry with backoff
+- **Worker Failures**: Graceful degradation with error messages
+- **Invalid Parameters**: Validation through Zod schemas
+- **Network Issues**: Timeout and retry logic
+
+## Usage Examples
+
+### Basic Manager Setup
+
+```typescript
+import { ManagerAgent } from 'officellm';
+import { z } from 'zod';
+
+const manager = new ManagerAgent({
+  name: 'Task Coordinator',
+  description: 'Coordinates specialized AI agents',
+  provider: {
+    type: 'openai',
+    apiKey: process.env.OPENAI_API_KEY!,
+    model: 'gpt-4',
+    temperature: 0.7,
+  },
+  systemPrompt: `You are a task coordinator. When given a task, analyze it and delegate to the appropriate worker.
+
+Available workers:
+- math_solver: For mathematical problems
+- research_assistant: For information gathering`,
+  tools: [
+    {
+      name: 'math_solver',
+      description: 'Delegate to math expert',
+      parameters: z.object({
+        task: z.string(),
+        priority: z.enum(['low', 'medium', 'high']),
+      }),
+    },
+    {
+      name: 'research_assistant',
+      description: 'Delegate to research expert',
+      parameters: z.object({
+        query: z.string(),
+        depth: z.enum(['basic', 'detailed']).default('detailed'),
+      }),
+    },
+  ],
+});
+```
+
+### Task Execution
+
+```typescript
+// Create worker agents
+const workers = new Map();
+workers.set('math_solver', mathWorker);
+workers.set('research_assistant', researchWorker);
+
+// Execute a task
+const result = await manager.executeTask({
+  title: 'Analyze data trends',
+  description: 'Calculate growth rates and research market trends',
+  priority: 'high',
+}, workers);
+
+console.log('Result:', result.content);
+console.log('Success:', result.success);
+console.log('Usage:', result.usage);
+```
+
+### Advanced Configuration
+
+```typescript
+const advancedManager = new ManagerAgent({
+  name: 'Senior Project Manager',
+  description: 'Expert coordinator with multi-step planning',
+  provider: {
+    type: 'anthropic',
+    apiKey: process.env.ANTHROPIC_API_KEY!,
+    model: 'claude-3-opus-20240229',
+    temperature: 0.3, // Lower temperature for more consistent coordination
+    maxTokens: 4096,
+  },
+  systemPrompt: `You are a senior project manager. Break down complex tasks into steps and coordinate multiple workers efficiently.
+
+Guidelines:
+- Always plan before executing
+- Use appropriate workers for each subtask
+- Synthesize results into coherent deliverables
+- Handle errors gracefully and provide alternatives
+
+Available workers: [list of workers]`,
+  tools: [
+    // Comprehensive tool set for complex coordination
+    {
+      name: 'math_solver',
+      description: 'Mathematical calculations and data analysis',
+      parameters: z.object({
+        task: z.string(),
+        priority: z.enum(['low', 'medium', 'high']),
+        context: z.string().optional(),
+      }),
+    },
+    {
+      name: 'research_assistant',
+      description: 'Information gathering and research',
+      parameters: z.object({
+        query: z.string(),
+        depth: z.enum(['basic', 'detailed', 'comprehensive']),
+        sources: z.array(z.string()).optional(),
+      }),
+    },
+    {
+      name: 'content_writer',
+      description: 'Content creation and documentation',
+      parameters: z.object({
+        topic: z.string(),
+        style: z.enum(['formal', 'casual', 'technical']),
+        length: z.enum(['short', 'medium', 'long']),
+      }),
+    },
+  ],
+});
+```
+
+## Best Practices
+
+### System Prompt Design
+
+```typescript
+// Good: Clear, specific instructions
+systemPrompt: `
+You are a project manager coordinating AI specialists.
+- Analyze tasks thoroughly before delegating
+- Choose the most appropriate worker for each subtask
+- Provide clear instructions to workers
+- Synthesize results into coherent responses
+- Handle errors gracefully
+
+Available workers:
+- math_solver: Mathematical calculations
+- research_assistant: Information gathering
+- content_writer: Content creation
+`
+
+// Avoid: Vague or overly complex instructions
+systemPrompt: `Do everything and be helpful.`
+```
+
+### Tool Definition
+
+```typescript
+// Good: Specific, well-defined tools
+tools: [
+  {
+    name: 'math_solver',
+    description: 'Solve mathematical problems and perform calculations',
+    parameters: z.object({
+      task: z.string().describe('The specific math problem to solve'),
+      approach: z.enum(['algebraic', 'geometric', 'calculus']).optional(),
+    }),
+  },
+]
+
+// Avoid: Generic or poorly defined tools
+tools: [
+  {
+    name: 'worker',
+    description: 'Do stuff',
+    parameters: z.object({
+      input: z.any(), // Too vague
+    }),
+  },
+]
+```
+
+### Error Handling
+
+```typescript
+const result = await manager.executeTask(task, workers);
+
+if (!result.success) {
+  console.error('Task failed:', result.error);
+
+  // Implement fallback logic
+  if (result.error?.includes('worker unavailable')) {
+    // Try alternative worker or approach
+  }
+}
+```

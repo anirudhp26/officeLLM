@@ -1,0 +1,63 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "officeLLM",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#000000",
+    "light": "#ffffff",
+    "dark": "#000000"
+  },
+  "theme": "prism",
+  "topbarCtaButton": {
+    "name": "Get Started",
+    "url": "https://github.com/anirudhp26/officellm"
+  },
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "introduction",
+        "quick-start",
+        "installation"
+      ]
+    },
+    {
+      "group": "Core Concepts",
+      "pages": [
+        "core-concepts/architecture",
+        "core-concepts/providers"
+      ]
+    },
+    {
+      "group": "API Reference",
+      "pages": [
+        "api/officeLLM",
+        "api/managers",
+        "api/workers",
+        "api/providers",
+        "api/types"
+      ]
+    },
+    {
+      "group": "Examples",
+      "pages": [
+        "examples/basic-usage"
+      ]
+    },
+    {
+      "group": "Contributing",
+      "pages": [
+        "contributing/extending-providers"
+      ]
+    }
+  ],
+  "footer": {
+    "socials": {
+      "github": "https://github.com/anirudhp26/officellm"
+    }
+  }
+}

@@ -1,0 +1,569 @@
+---
+title: "Types API"
+description: "TypeScript type definitions and interfaces"
+---
+
+## Core Types
+
+### ID
+
+Unique identifier type used throughout the system.
+
+```typescript
+type ID = string;
+```
+
+### TaskPriority
+
+Priority levels for tasks.
+
+```typescript
+type TaskPriority = 'low' | 'medium' | 'high';
+```
+
+### TaskStatus
+
+Execution status of tasks.
+
+```typescript
+type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled';
+```
+
+## Configuration Types
+
+### OfficeLLMConfig
+
+Main configuration for officeLLM instances.
+
+```typescript
+interface OfficeLLMConfig {
+  manager: ManagerConfig;
+  workers: WorkerConfig[];
+}
+```
+
+### ManagerConfig
+
+Configuration for manager agents.
+
+```typescript
+interface ManagerConfig {
+  name: string;
+  description?: string;
+  provider: ProviderConfig;
+  systemPrompt: string;
+  tools: ToolDefinition[];
+}
+```
+
+### WorkerConfig
+
+Configuration for worker agents.
+
+```typescript
+interface WorkerConfig {
+  name: string;
+  description?: string;
+  provider: ProviderConfig;
+  systemPrompt: string;
+  tools: ToolDefinition[];
+}
+```
+
+## Provider Types
+
+### ProviderType
+
+Supported LLM provider types.
+
+```typescript
+type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'openrouter';
+```
+
+### ProviderConfig
+
+Union type for all provider configurations.
+
+```typescript
+type ProviderConfig =
+  | OpenAIConfig
+  | AnthropicConfig
+  | GeminiConfig
+  | OpenRouterConfig;
+```
+
+### BaseProviderConfig
+
+Common configuration properties for all providers.
+
+```typescript
+interface BaseProviderConfig {
+  type: ProviderType;
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  [key: string]: any; // Provider-specific options
+}
+```
+
+### OpenAIConfig
+
+OpenAI provider configuration.
+
+```typescript
+interface OpenAIConfig extends BaseProviderConfig {
+  type: 'openai';
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+}
+```
+
+### AnthropicConfig
+
+Anthropic provider configuration.
+
+```typescript
+interface AnthropicConfig extends BaseProviderConfig {
+  type: 'anthropic';
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  topK?: number;
+}
+```
+
+### GeminiConfig
+
+Google Gemini provider configuration.
+
+```typescript
+interface GeminiConfig extends BaseProviderConfig {
+  type: 'gemini';
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  topK?: number;
+}
+```
+
+### OpenRouterConfig
+
+OpenRouter provider configuration.
+
+```typescript
+interface OpenRouterConfig extends BaseProviderConfig {
+  type: 'openrouter';
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+}
+```
+
+## Task Types
+
+### Task
+
+Task definition for execution.
+
+```typescript
+interface Task {
+  title: string;
+  description: string;
+  priority?: TaskPriority;
+  [key: string]: any; // Additional task-specific parameters
+}
+```
+
+### TaskResult
+
+Result of task execution.
+
+```typescript
+interface TaskResult {
+  success: boolean;
+  content: string;
+  toolCalls?: ToolCall[];
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  error?: string;
+}
+```
+
+## Provider Communication Types
+
+### ProviderMessage
+
+Message format for LLM provider communication.
+
+```typescript
+interface ProviderMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  toolCalls?: ToolCall[];
+  toolCallId?: string;
+}
+```
+
+### ToolCall
+
+Tool/function call format.
+
+```typescript
+interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+```
+
+### ToolDefinition
+
+Tool/function definition format.
+
+```typescript
+interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: z.ZodSchema<any> | Record<string, any>;
+}
+```
+
+### ProviderResponse
+
+Response format from LLM providers.
+
+```typescript
+interface ProviderResponse {
+  content: string;
+  toolCalls?: ToolCall[];
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  finishReason: string;
+}
+```
+
+## Legacy Types (Deprecated)
+
+These types from the old architecture are maintained for backward compatibility but are not recommended for new code.
+
+### Expertise
+
+Worker expertise definition (legacy).
+
+```typescript
+interface Expertise {
+  domain: string;
+  skills: string[];
+  confidence: number; // 0-1 scale
+}
+```
+
+### Message
+
+Inter-agent message format (legacy).
+
+```typescript
+interface Message {
+  id: ID;
+  from: ID;
+  to: ID;
+  content: string;
+  timestamp: Date;
+  metadata?: Record<string, any>;
+}
+```
+
+### ToolResult
+
+Tool execution result (legacy).
+
+```typescript
+interface ToolResult {
+  success: boolean;
+  data?: any;
+  error?: string;
+  metadata?: Record<string, any>;
+}
+```
+
+### LLMConfig
+
+LLM provider configuration (legacy).
+
+```typescript
+interface LLMConfig {
+  provider: string;
+  model: string;
+  apiKey?: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  customParams?: Record<string, any>;
+}
+```
+
+### AgentContext
+
+Agent execution context (legacy).
+
+```typescript
+interface AgentContext {
+  taskId: ID;
+  messages: Message[];
+  sharedMemory: Map<string, any>;
+  metadata?: Record<string, any>;
+}
+```
+
+### RoutingDecision
+
+Manager routing decision (legacy).
+
+```typescript
+interface RoutingDecision {
+  workerId: ID;
+  reasoning: string;
+  confidence: number;
+  alternativeWorkers?: ID[];
+  estimatedDuration?: number;
+}
+```
+
+### PerformanceMetrics
+
+Agent performance tracking (legacy).
+
+```typescript
+interface PerformanceMetrics {
+  tasksCompleted: number;
+  averageExecutionTime: number;
+  successRate: number;
+  errorRate: number;
+  lastActivity: Date;
+  expertiseMatches: number;
+}
+```
+
+## Type Guards
+
+### Provider Type Guards
+
+```typescript
+function isOpenAIConfig(config: ProviderConfig): config is OpenAIConfig {
+  return config.type === 'openai';
+}
+
+function isAnthropicConfig(config: ProviderConfig): config is AnthropicConfig {
+  return config.type === 'anthropic';
+}
+
+function isGeminiConfig(config: ProviderConfig): config is GeminiConfig {
+  return config.type === 'gemini';
+}
+
+function isOpenRouterConfig(config: ProviderConfig): config is OpenRouterConfig {
+  return config.type === 'openrouter';
+}
+```
+
+## Utility Types
+
+### DeepPartial
+
+Make all properties of a type optional recursively.
+
+```typescript
+type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+};
+```
+
+### ProviderConfigMap
+
+Map of provider types to their configurations.
+
+```typescript
+type ProviderConfigMap = {
+  openai: OpenAIConfig;
+  anthropic: AnthropicConfig;
+  gemini: GeminiConfig;
+  openrouter: OpenRouterConfig;
+};
+```
+
+### ExtractProviderConfig
+
+Extract configuration type for a specific provider.
+
+```typescript
+type ExtractProviderConfig<T extends ProviderType> = ProviderConfigMap[T];
+```
+
+## Zod Schemas
+
+officeLLM uses Zod schemas for runtime type validation. Here are the schema definitions:
+
+```typescript
+import { z } from 'zod';
+
+// Provider configurations
+const BaseProviderConfigSchema = z.object({
+  type: z.enum(['openai', 'anthropic', 'gemini', 'openrouter']),
+  apiKey: z.string(),
+  model: z.string(),
+  temperature: z.number().min(0).max(1).optional(),
+  maxTokens: z.number().positive().optional(),
+});
+
+const OpenAIConfigSchema = BaseProviderConfigSchema.extend({
+  type: z.literal('openai'),
+  topP: z.number().min(0).max(1).optional(),
+  frequencyPenalty: z.number().min(-2).max(2).optional(),
+  presencePenalty: z.number().min(-2).max(2).optional(),
+});
+
+// Task schemas
+const TaskSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  priority: z.enum(['low', 'medium', 'high']).optional(),
+}).catchall(z.any()); // Allow additional properties
+
+const TaskResultSchema = z.object({
+  success: z.boolean(),
+  content: z.string(),
+  toolCalls: z.array(z.any()).optional(),
+  usage: z.object({
+    promptTokens: z.number(),
+    completionTokens: z.number(),
+    totalTokens: z.number(),
+  }).optional(),
+  error: z.string().optional(),
+});
+
+// Tool schemas
+const ToolDefinitionSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  parameters: z.any(), // Zod schema or plain object
+});
+
+const ToolCallSchema = z.object({
+  id: z.string(),
+  type: z.literal('function'),
+  function: z.object({
+    name: z.string(),
+    arguments: z.string(),
+  }),
+});
+```
+
+## Usage Examples
+
+### Type-Safe Configuration
+
+```typescript
+import { OfficeLLMConfig, ManagerConfig, WorkerConfig } from 'officellm';
+
+const config: OfficeLLMConfig = {
+  manager: {
+    name: 'Project Manager',
+    description: 'Coordinates AI workers',
+    provider: {
+      type: 'openai',
+      apiKey: process.env.OPENAI_API_KEY!,
+      model: 'gpt-4',
+      temperature: 0.7,
+    },
+    systemPrompt: 'You coordinate AI agents...',
+    tools: [],
+  } satisfies ManagerConfig,
+  workers: [
+    {
+      name: 'Math Solver',
+      provider: {
+        type: 'anthropic',
+        apiKey: process.env.ANTHROPIC_API_KEY!,
+        model: 'claude-3-sonnet-20240229',
+      },
+      systemPrompt: 'You solve math problems...',
+      tools: [],
+    } satisfies WorkerConfig,
+  ],
+};
+```
+
+### Runtime Type Checking
+
+```typescript
+import { TaskSchema, ProviderConfig } from 'officellm';
+
+function validateTask(task: unknown): Task {
+  return TaskSchema.parse(task);
+}
+
+function validateProviderConfig(config: unknown): ProviderConfig {
+  // Runtime validation of provider config
+  const baseSchema = BaseProviderConfigSchema.parse(config);
+
+  switch (baseSchema.type) {
+    case 'openai':
+      return OpenAIConfigSchema.parse(config);
+    case 'anthropic':
+      return AnthropicConfigSchema.parse(config);
+    // ... other providers
+    default:
+      throw new Error(`Unknown provider type: ${baseSchema.type}`);
+  }
+}
+```
+
+### Generic Provider Functions
+
+```typescript
+function createProvider<T extends ProviderType>(
+  type: T,
+  config: ExtractProviderConfig<T>
+): IProvider {
+  return ProviderFactory.create(config);
+}
+
+// Usage
+const openaiProvider = createProvider('openai', {
+  type: 'openai',
+  apiKey: 'sk-...',
+  model: 'gpt-4',
+  temperature: 0.7,
+});
+
+const anthropicProvider = createProvider('anthropic', {
+  type: 'anthropic',
+  apiKey: 'sk-ant-...',
+  model: 'claude-3-sonnet-20240229',
+});
+```

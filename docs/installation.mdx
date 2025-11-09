@@ -1,0 +1,151 @@
+---
+title: "Installation"
+description: "Install officeLLM and set up your development environment"
+---
+
+# Installation
+
+Install officeLLM in your TypeScript or JavaScript project.
+
+## Package Installation
+
+```bash
+npm install officellm zod
+```
+
+or
+
+```bash
+yarn add officellm zod
+```
+
+or
+
+```bash
+pnpm add officellm zod
+```
+
+## Peer Dependencies
+
+officeLLM requires the following peer dependencies:
+
+- **zod**: `^3.22.4` - For type validation and schemas
+- **Node.js**: `>=18.0.0` - For ES modules support
+
+## Provider SDKs (Optional)
+
+To use real LLM providers instead of mock implementations, install the relevant SDKs:
+
+```bash
+# For OpenAI
+npm install openai
+
+# For Anthropic
+npm install @anthropic-ai/sdk
+
+# For Google Gemini
+npm install @google/generative-ai
+```
+
+<Note>
+  The mock implementations work out of the box for testing and development. Real provider integrations require API keys and the corresponding SDKs.
+</Note>
+
+## TypeScript Setup
+
+officeLLM is built with TypeScript and provides full type safety. Ensure your `tsconfig.json` includes:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
+  }
+}
+```
+
+## Environment Setup
+
+Create a `.env` file in your project root:
+
+```bash
+# At least one provider API key is required
+OPENAI_API_KEY=sk-your-openai-key-here
+ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here
+GEMINI_API_KEY=your-gemini-key-here
+OPENROUTER_API_KEY=sk-or-v1-your-openrouter-key-here
+```
+
+## Verification
+
+Create a simple test file to verify your installation:
+
+```typescript
+// test.ts
+import { OfficeLLM } from 'officellm';
+import { z } from 'zod';
+
+const manager = {
+  name: 'Test Manager',
+  provider: {
+    type: 'openai' as const,
+    apiKey: process.env.OPENAI_API_KEY || '',
+    model: 'gpt-4',
+  },
+  systemPrompt: 'You are a test manager.',
+  tools: [],
+};
+
+const office = new OfficeLLM({
+  manager,
+  workers: [],
+});
+
+console.log('✅ officeLLM installed successfully!');
+console.log('Manager:', office.getManager());
+```
+
+Run the test:
+
+```bash
+npx tsx test.ts
+```
+
+You should see:
+```
+✅ officeLLM installed successfully!
+Manager: { name: 'Test Manager', description: undefined }
+```
+
+## IDE Support
+
+### VS Code
+
+Install the recommended extensions:
+
+- **TypeScript Importer** - For auto-imports
+- **Zod** - For Zod schema IntelliSense
+
+### Auto-completion
+
+officeLLM provides full TypeScript intellisense for:
+
+- Provider configurations
+- Tool definitions
+- Zod schemas
+- Method signatures
+
+## Next Steps
+
+<CardGroup>
+  <Card title="Quick Start" icon="play" href="/quick-start">
+    Start building your first multi-agent system
+  </Card>
+  <Card title="Examples" icon="lightbulb" href="/examples/basic-usage">
+    Explore example implementations
+  </Card>
+</CardGroup>

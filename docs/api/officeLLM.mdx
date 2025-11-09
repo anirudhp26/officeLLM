@@ -1,0 +1,214 @@
+---
+title: "OfficeLLM"
+description: "Main API for creating and managing multi-agent systems"
+---
+
+```typescript
+import { OfficeLLM } from 'officellm';
+```
+
+## Constructor
+
+```typescript
+new OfficeLLM(config: OfficeLLMConfig)
+```
+
+Creates a new officeLLM instance with manager and worker agents.
+
+<ParamField body="config" required>
+  Configuration object containing manager and workers
+</ParamField>
+
+### Example
+
+```typescript
+const office = new OfficeLLM({
+  manager: managerConfig,
+  workers: [workerConfig1, workerConfig2],
+});
+```
+
+## Methods
+
+### executeTask
+
+```typescript
+executeTask(task: Task): Promise<TaskResult>
+```
+
+Execute a task through the manager agent.
+
+<ParamField body="task" required>
+  Task object with title, description, and priority
+</ParamField>
+
+**Returns:** Promise resolving to task result
+
+### callWorker
+
+```typescript
+callWorker(workerName: string, params: Record<string, any>): Promise<TaskResult>
+```
+
+Call a specific worker agent directly.
+
+<ParamField body="workerName" required>
+  Name of the worker agent to call
+</ParamField>
+
+<ParamField body="params" required>
+  Parameters to pass to the worker
+</ParamField>
+
+**Returns:** Promise resolving to task result
+
+### getWorkers
+
+```typescript
+getWorkers(): string[]
+```
+
+Get list of available worker agent names.
+
+**Returns:** Array of worker names
+
+### getManager
+
+```typescript
+getManager(): { name: string; description?: string }
+```
+
+Get manager agent information.
+
+**Returns:** Object with manager name and description
+
+## Types
+
+### OfficeLLMConfig
+
+```typescript
+interface OfficeLLMConfig {
+  manager: ManagerConfig;
+  workers: WorkerConfig[];
+}
+```
+
+### ManagerConfig
+
+```typescript
+interface ManagerConfig {
+  name: string;
+  description?: string;
+  provider: ProviderConfig;
+  systemPrompt: string;
+  tools: ToolDefinition[];
+}
+```
+
+### WorkerConfig
+
+```typescript
+interface WorkerConfig {
+  name: string;
+  description?: string;
+  provider: ProviderConfig;
+  systemPrompt: string;
+  tools: ToolDefinition[];
+}
+```
+
+### Task
+
+```typescript
+interface Task {
+  title: string;
+  description: string;
+  priority?: 'low' | 'medium' | 'high';
+  [key: string]: any; // Additional parameters
+}
+```
+
+### TaskResult
+
+```typescript
+interface TaskResult {
+  success: boolean;
+  content: string;
+  toolCalls?: ToolCall[];
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  error?: string;
+}
+```
+
+## Usage Examples
+
+### Basic Task Execution
+
+```typescript
+const office = new OfficeLLM({
+  manager: {
+    name: 'Project Manager',
+    provider: { type: 'openai', apiKey: '...', model: 'gpt-4' },
+    systemPrompt: 'You coordinate AI agents...',
+    tools: [
+      {
+        name: 'math_solver',
+        description: 'Solve math problems',
+        parameters: z.object({
+          task: z.string(),
+        }),
+      },
+    ],
+  },
+  workers: [
+    {
+      name: 'Math Solver',
+      provider: { type: 'anthropic', apiKey: '...', model: 'claude-3-sonnet' },
+      systemPrompt: 'You are a math expert...',
+      tools: [
+        {
+          name: 'calculate',
+          description: 'Calculate expressions',
+          parameters: z.object({
+            expression: z.string(),
+          }),
+        },
+      ],
+    },
+  ],
+});
+
+// Execute task
+const result = await office.executeTask({
+  title: 'Calculate area',
+  description: 'What is the area of a circle with radius 5?',
+  priority: 'medium',
+});
+
+console.log(result.content); // "The area is approximately 78.54 square units..."
+```
+
+### Direct Worker Call
+
+```typescript
+// Call worker directly
+const workerResult = await office.callWorker('Math Solver', {
+  task: 'Solve for x: 2x + 3 = 7',
+});
+
+console.log(workerResult.content);
+```
+
+### Getting Available Workers
+
+```typescript
+const workers = office.getWorkers();
+console.log(workers); // ['Math Solver', 'Research Assistant', ...]
+
+const manager = office.getManager();
+console.log(manager.name); // 'Project Manager'
+```

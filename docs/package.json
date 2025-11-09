@@ -1,0 +1,13 @@
+{
+  "name": "officellm-docs",
+  "version": "1.0.0",
+  "description": "Documentation for officeLLM - Multi-agent AI orchestration",
+  "scripts": {
+    "dev": "mintlify dev",
+    "build": "mintlify build",
+    "preview": "mintlify preview"
+  },
+  "devDependencies": {
+    "mintlify": "^4.0.0"
+  }
+}

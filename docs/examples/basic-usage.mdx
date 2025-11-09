@@ -1,0 +1,335 @@
+---
+title: "Basic Usage"
+description: "Simple examples of using officeLLM for multi-agent tasks"
+---
+
+# Basic Usage Examples
+
+Get started with officeLLM by exploring these basic usage patterns.
+
+## Simple Math Assistant
+
+Create a basic system with one manager and one math-focused worker.
+
+```typescript
+import { OfficeLLM } from 'officellm';
+import { z } from 'zod';
+
+// Define a math worker
+const mathWorker = {
+  name: 'Math Expert',
+  description: 'Specializes in mathematical calculations and problem solving',
+  provider: {
+    type: 'openai' as const,
+    apiKey: process.env.OPENAI_API_KEY || '',
+    model: 'gpt-4',
+    temperature: 0.1, // Low temperature for precision
+  },
+  systemPrompt: `You are a mathematical expert. Solve problems step by step.
+  Always show your work and provide clear explanations.`,
+  tools: [
+    {
+      name: 'calculate',
+      description: 'Perform mathematical calculations',
+      parameters: z.object({
+        expression: z.string().describe('The mathematical expression to evaluate'),
+      }),
+    },
+  ],
+};
+
+// Define the manager
+const manager = {
+  name: 'Task Coordinator',
+  description: 'Coordinates tasks and delegates to appropriate workers',
+  provider: {
+    type: 'anthropic' as const,
+    apiKey: process.env.ANTHROPIC_API_KEY || '',
+    model: 'claude-3-sonnet-20240229',
+    temperature: 0.7,
+  },
+  systemPrompt: `You are a task coordinator. When given a task, analyze it and delegate to the appropriate worker.
+
+Available workers:
+- Math Expert: For mathematical problems and calculations`,
+  tools: [
+    {
+      name: 'Math Expert',
+      description: 'Delegate mathematical tasks to the math expert',
+      parameters: z.object({
+        task: z.string().describe('The mathematical task to solve'),
+        priority: z.enum(['low', 'medium', 'high']).default('medium'),
+      }),
+    },
+  ],
+};
+
+// Initialize office
+const office = new OfficeLLM({
+  manager,
+  workers: [mathWorker],
+});
+
+// Execute tasks
+async function runExamples() {
+  // Example 1: Simple calculation
+  console.log('=== Example 1: Simple Calculation ===');
+  const result1 = await office.executeTask({
+    title: 'Calculate area',
+    description: 'What is the area of a circle with radius 5?',
+  });
+  console.log('Result:', result1.content);
+  console.log('Success:', result1.success);
+
+  // Example 2: Complex problem
+  console.log('\n=== Example 2: Complex Problem ===');
+  const result2 = await office.executeTask({
+    title: 'Solve quadratic equation',
+    description: 'Solve the quadratic equation: x² + 5x + 6 = 0',
+  });
+  console.log('Result:', result2.content);
+
+  // Example 3: Direct worker call
+  console.log('\n=== Example 3: Direct Worker Call ===');
+  const result3 = await office.callWorker('Math Expert', {
+    task: 'Calculate 15% of 200',
+  });
+  console.log('Result:', result3.content);
+}
+
+runExamples().catch(console.error);
+```
+
+## Multi-Worker System
+
+Create a system with multiple specialized workers.
+
+```typescript
+import { OfficeLLM } from 'officellm';
+import { z } from 'zod';
+
+// Math worker
+const mathWorker = {
+  name: 'Math Solver',
+  provider: { type: 'openai', apiKey: '...', model: 'gpt-4' },
+  systemPrompt: 'You solve mathematical problems...',
+  tools: [
+    {
+      name: 'calculate',
+      description: 'Calculate mathematical expressions',
+      parameters: z.object({ expression: z.string() }),
+    },
+  ],
+};
+
+// Research worker
+const researchWorker = {
+  name: 'Research Assistant',
+  provider: { type: 'gemini', apiKey: '...', model: 'gemini-pro' },
+  systemPrompt: 'You conduct research and gather information...',
+  tools: [
+    {
+      name: 'search',
+      description: 'Search for information',
+      parameters: z.object({
+        query: z.string(),
+        limit: z.number().default(10),
+      }),
+    },
+  ],
+};
+
+// Writing worker
+const writingWorker = {
+  name: 'Content Writer',
+  provider: { type: 'anthropic', apiKey: '...', model: 'claude-3-haiku' },
+  systemPrompt: 'You write clear and engaging content...',
+  tools: [
+    {
+      name: 'write',
+      description: 'Write content on a topic',
+      parameters: z.object({
+        topic: z.string(),
+        style: z.enum(['formal', 'casual']).default('formal'),
+      }),
+    },
+  ],
+};
+
+// Manager with all workers
+const manager = {
+  name: 'Project Manager',
+  provider: { type: 'openai', apiKey: '...', model: 'gpt-4' },
+  systemPrompt: `You coordinate a team of specialists.
+
+Available workers:
+- Math Solver: For calculations and math problems
+- Research Assistant: For information gathering
+- Content Writer: For writing and content creation`,
+  tools: [
+    {
+      name: 'Math Solver',
+      description: 'Solve math problems',
+      parameters: z.object({ task: z.string() }),
+    },
+    {
+      name: 'Research Assistant',
+      description: 'Conduct research',
+      parameters: z.object({ query: z.string() }),
+    },
+    {
+      name: 'Content Writer',
+      description: 'Write content',
+      parameters: z.object({ topic: z.string() }),
+    },
+  ],
+};
+
+const office = new OfficeLLM({
+  manager,
+  workers: [mathWorker, researchWorker, writingWorker],
+});
+
+// Complex multi-step task
+const result = await office.executeTask({
+  title: 'Create research report',
+  description: `
+  Create a report on AI adoption in small businesses:
+  1. Research current statistics on AI adoption rates
+  2. Analyze the data and calculate growth projections
+  3. Write a summary report
+
+  Coordinate between research, math, and writing specialists as needed.
+  `,
+  priority: 'high',
+});
+
+console.log('Final Report:', result.content);
+```
+
+## Environment-Based Configuration
+
+Use environment variables to configure providers dynamically.
+
+```typescript
+// config.ts
+import { OfficeLLM } from 'officellm';
+import { z } from 'zod';
+
+function getProviderConfig(type: 'openai' | 'anthropic' | 'gemini' | 'openrouter') {
+  const configs = {
+    openai: {
+      type: 'openai' as const,
+      apiKey: process.env.OPENAI_API_KEY || '',
+      model: process.env.OPENAI_MODEL || 'gpt-4',
+    },
+    anthropic: {
+      type: 'anthropic' as const,
+      apiKey: process.env.ANTHROPIC_API_KEY || '',
+      model: process.env.ANTHROPIC_MODEL || 'claude-3-sonnet-20240229',
+    },
+    gemini: {
+      type: 'gemini' as const,
+      apiKey: process.env.GEMINI_API_KEY || '',
+      model: process.env.GEMINI_MODEL || 'gemini-pro',
+    },
+    openrouter: {
+      type: 'openrouter' as const,
+      apiKey: process.env.OPENROUTER_API_KEY || '',
+      model: process.env.OPENROUTER_MODEL || 'anthropic/claude-3-sonnet',
+    },
+  };
+
+  return configs[type];
+}
+
+export function createOffice() {
+  const managerProvider = getProviderConfig(
+    (process.env.MANAGER_PROVIDER as any) || 'openai'
+  );
+
+  const workerProviders = {
+    math: getProviderConfig((process.env.MATH_PROVIDER as any) || 'anthropic'),
+    research: getProviderConfig((process.env.RESEARCH_PROVIDER as any) || 'gemini'),
+    writing: getProviderConfig((process.env.WRITING_PROVIDER as any) || 'openrouter'),
+  };
+
+  return new OfficeLLM({
+    manager: {
+      name: 'Project Manager',
+      provider: managerProvider,
+      systemPrompt: 'You coordinate AI agents...',
+      tools: [
+        {
+          name: 'math_solver',
+          description: 'Math calculations',
+          parameters: z.object({ task: z.string() }),
+        },
+        {
+          name: 'research_assistant',
+          description: 'Research and analysis',
+          parameters: z.object({ query: z.string() }),
+        },
+        {
+          name: 'content_writer',
+          description: 'Content creation',
+          parameters: z.object({ topic: z.string() }),
+        },
+      ],
+    },
+    workers: [
+      {
+        name: 'Math Solver',
+        provider: workerProviders.math,
+        systemPrompt: 'You solve math problems...',
+        tools: [/* math tools */],
+      },
+      {
+        name: 'Research Assistant',
+        provider: workerProviders.research,
+        systemPrompt: 'You conduct research...',
+        tools: [/* research tools */],
+      },
+      {
+        name: 'Content Writer',
+        provider: workerProviders.writing,
+        systemPrompt: 'You write content...',
+        tools: [/* writing tools */],
+      },
+    ],
+  });
+}
+```
+
+## Error Handling
+
+Handle errors gracefully in production.
+
+```typescript
+async function safeExecuteTask(office: OfficeLLM, task: Task) {
+  try {
+    const result = await office.executeTask(task);
+
+    if (!result.success) {
+      console.error('Task failed:', result.error);
+      return null;
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Execution error:', error);
+    return null;
+  }
+}
+
+// Usage
+const office = createOffice();
+const result = await safeExecuteTask(office, {
+  title: 'Test task',
+  description: 'A test task description',
+});
+
+if (result) {
+  console.log('Success:', result.content);
+}
+```

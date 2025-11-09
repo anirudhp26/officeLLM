@@ -1,0 +1,357 @@
+---
+title: "Extending Providers"
+description: "officeLLM's provider system is designed to be easily extensible. Adding a new LLM provider requires minimal code changes."
+---
+
+## Provider Architecture
+
+Each provider implements the `IProvider` interface:
+
+```typescript
+interface IProvider {
+  readonly type: ProviderType;
+  readonly config: BaseProviderConfig;
+
+  chat(messages: ProviderMessage[], tools?: ToolDefinition[]): Promise<ProviderResponse>;
+  isAvailable(): Promise<boolean>;
+  getSupportedModels(): string[];
+}
+```
+
+## Step-by-Step Guide
+
+### 1. Create Provider Class
+
+Extend `BaseProvider` and implement the required methods:
+
+```typescript
+import { BaseProvider, ProviderResponse, ProviderMessage, ToolDefinition } from 'officellm';
+
+export interface CustomProviderConfig extends BaseProviderConfig {
+  type: 'custom';
+  apiKey: string;
+  model: string;
+  customOption?: string; // Add custom config options
+}
+
+export class CustomProvider extends BaseProvider {
+  constructor(config: CustomProviderConfig) {
+    super(config);
+  }
+
+  async chat(
+    messages: ProviderMessage[],
+    tools?: ToolDefinition[]
+  ): Promise<ProviderResponse> {
+    // Convert messages to your provider's format
+    const providerMessages = this.convertMessages(messages);
+
+    // Add tool support if your provider supports it
+    const providerTools = tools ? this.convertTools(tools) : undefined;
+
+    // Call your provider's API
+    const response = await this.callCustomAPI(providerMessages, providerTools);
+
+    return {
+      content: response.content,
+      toolCalls: response.toolCalls,
+      usage: response.usage,
+      finishReason: response.finishReason,
+    };
+  }
+
+  getSupportedModels(): string[] {
+    return ['custom-model-1', 'custom-model-2', 'custom-model-3'];
+  }
+
+  private convertMessages(messages: ProviderMessage[]): any[] {
+    // Convert officeLLM messages to your provider's format
+    return messages.map(msg => ({
+      role: msg.role,
+      content: msg.content,
+      // Add other conversions as needed
+    }));
+  }
+
+  private convertTools(tools: ToolDefinition[]): any[] {
+    // Convert officeLLM tools to your provider's format
+    return tools.map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: this.zodToJsonSchema(tool.parameters),
+    }));
+  }
+
+  private async callCustomAPI(messages: any[], tools?: any[]): Promise<any> {
+    // Implement your API call here
+    // This is where you'd integrate with your provider's SDK
+    throw new Error('Custom API implementation required');
+  }
+
+  private zodToJsonSchema(schema: any): any {
+    // Convert Zod schema to JSON schema
+    // You can use zod-to-json-schema library or implement manually
+    return {
+      type: 'object',
+      properties: {},
+      required: [],
+    };
+  }
+}
+```
+
+### 2. Register the Provider
+
+Add your provider to the factory registry:
+
+```typescript
+import { ProviderFactory } from 'officellm';
+import { CustomProvider } from './CustomProvider';
+
+// Register the provider
+ProviderFactory.register('custom', CustomProvider);
+
+// Now you can use it
+const provider = ProviderFactory.create({
+  type: 'custom',
+  apiKey: 'your-api-key',
+  model: 'custom-model-1',
+  customOption: 'value',
+});
+```
+
+### 3. Update Type Definitions
+
+Add your provider type to the union:
+
+```typescript
+// In your types file or provider index
+export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'custom';
+```
+
+### 4. Use in Agents
+
+```typescript
+const manager = {
+  name: 'Manager',
+  provider: {
+    type: 'custom' as const,
+    apiKey: 'your-key',
+    model: 'custom-model-1',
+    customOption: 'value',
+  },
+  systemPrompt: 'You coordinate tasks...',
+  tools: [/* your tools */],
+};
+```
+
+## Example: Adding Ollama Support
+
+```typescript
+import { BaseProvider, ProviderResponse, ProviderMessage, ToolDefinition } from 'officellm';
+
+export interface OllamaConfig extends BaseProviderConfig {
+  type: 'ollama';
+  baseURL?: string; // Default: http://localhost:11434
+  model: string;
+}
+
+export class OllamaProvider extends BaseProvider {
+  constructor(config: OllamaConfig) {
+    super(config);
+  }
+
+  async chat(
+    messages: ProviderMessage[],
+    tools?: ToolDefinition[]
+  ): Promise<ProviderResponse> {
+    const baseURL = (this.config as OllamaConfig).baseURL || 'http://localhost:11434';
+
+    const response = await fetch(`${baseURL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: this.config.model,
+        messages: messages.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+        stream: false,
+      }),
+    });
+
+    const data = await response.json();
+
+    return {
+      content: data.message?.content || '',
+      usage: {
+        promptTokens: data.prompt_eval_count || 0,
+        completionTokens: data.eval_count || 0,
+        totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
+      },
+      finishReason: data.done_reason || 'stop',
+    };
+  }
+
+  getSupportedModels(): string[] {
+    // Ollama supports many models - return common ones
+    return ['llama2', 'codellama', 'mistral', 'vicuna'];
+  }
+
+  async isAvailable(): Promise<boolean> {
+    try {
+      const baseURL = (this.config as OllamaConfig).baseURL || 'http://localhost:11434';
+      const response = await fetch(`${baseURL}/api/tags`);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+// Register the provider
+import { ProviderFactory } from 'officellm';
+ProviderFactory.register('ollama', OllamaProvider);
+```
+
+## Best Practices
+
+### Error Handling
+
+```typescript
+async chat(messages: ProviderMessage[], tools?: ToolDefinition[]): Promise<ProviderResponse> {
+  try {
+    const response = await this.callAPI(messages, tools);
+    return this.parseResponse(response);
+  } catch (error) {
+    // Handle rate limits
+    if (error.status === 429) {
+      await this.delay(this.getRetryDelay());
+      return this.chat(messages, tools); // Retry
+    }
+
+    // Handle authentication errors
+    if (error.status === 401) {
+      throw new Error('Invalid API key');
+    }
+
+    // Handle other errors
+    throw new Error(`Provider error: ${error.message}`);
+  }
+}
+```
+
+### Rate Limiting
+
+```typescript
+private requestQueue: Promise<any>[] = [];
+private lastRequestTime = 0;
+private minRequestInterval = 1000; // 1 second between requests
+
+private async throttleRequest<T>(request: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  const timeSinceLastRequest = now - this.lastRequestTime;
+
+  if (timeSinceLastRequest < this.minRequestInterval) {
+    await this.delay(this.minRequestInterval - timeSinceLastRequest);
+  }
+
+  this.lastRequestTime = Date.now();
+  return request();
+}
+```
+
+### Tool Support
+
+If your provider doesn't support tools natively:
+
+```typescript
+async chat(messages: ProviderMessage[], tools?: ToolDefinition[]): Promise<ProviderResponse> {
+  // If no tools, use normal chat
+  if (!tools || tools.length === 0) {
+    return this.callAPI(messages);
+  }
+
+  // For providers without tool support, describe tools in system prompt
+  const toolDescriptions = tools.map(tool =>
+    `${tool.name}: ${tool.description}`
+  ).join('\n');
+
+  const enhancedMessages = [
+    {
+      role: 'system' as const,
+      content: `${messages[0].content}\n\nAvailable tools:\n${toolDescriptions}`,
+    },
+    ...messages.slice(1),
+  ];
+
+  const response = await this.callAPI(enhancedMessages);
+
+  // Parse tool calls from response text
+  const toolCalls = this.parseToolCallsFromText(response.content);
+
+  return {
+    ...response,
+    toolCalls,
+  };
+}
+```
+
+### Testing
+
+```typescript
+// Create mock implementations for testing
+export class MockCustomProvider extends BaseProvider {
+  async chat(): Promise<ProviderResponse> {
+    return {
+      content: 'Mock response from custom provider',
+      usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      finishReason: 'stop',
+    };
+  }
+
+  getSupportedModels(): string[] {
+    return ['mock-model'];
+  }
+}
+```
+
+## Provider Registry
+
+officeLLM maintains a global provider registry:
+
+```typescript
+// Check if provider is registered
+ProviderFactory.isRegistered('custom'); // boolean
+
+// Get all registered types
+ProviderFactory.getRegisteredTypes(); // ['openai', 'anthropic', 'gemini', 'openrouter', 'custom']
+
+// Get supported models for a provider
+ProviderFactory.getSupportedModels('openai'); // ['gpt-4', 'gpt-3.5-turbo', ...]
+```
+
+## Contributing
+
+When adding a new provider:
+
+1. Create comprehensive tests
+2. Add documentation to this guide
+3. Update the main README with the new provider
+4. Follow the existing code patterns
+5. Handle errors gracefully
+6. Support both tool and non-tool usage
+
+## Need Help?
+
+<CardGroup>
+  <Card title="API Documentation" icon="book" href="/core-concepts/architecture">
+    Check the complete provider API reference
+  </Card>
+  <Card title="Discussions" icon="comment" href="https://github.com/anirudhp26/officellm/discussions">
+    Ask questions and get community help
+  </Card>
+  <Card title="Report Issues" icon="bell" href="https://github.com/anirudhp26/officellm/issues">
+    Found a bug? Let us know
+  </Card>
+</CardGroup>

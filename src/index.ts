@@ -1,0 +1,38 @@
+// Main exports
+export { OfficeLLM } from './core/OfficeLLM';
+
+// Provider system
+export {
+  BaseProvider,
+  IProvider,
+  BaseProviderConfig,
+  ProviderType,
+  ProviderMessage,
+  ToolCall,
+  ToolDefinition,
+  ProviderResponse,
+} from './providers/BaseProvider';
+
+export { OpenAIProvider, OpenAIConfig } from './providers/OpenAIProvider';
+export { AnthropicProvider, AnthropicConfig } from './providers/AnthropicProvider';
+export { GeminiProvider, GeminiConfig } from './providers/GeminiProvider';
+export { OpenRouterProvider, OpenRouterConfig } from './providers/OpenRouterProvider';
+
+export {
+  ProviderFactory,
+  createProvider,
+  registerProvider,
+  ProviderConfig,
+} from './providers/ProviderFactory';
+
+// Types
+export {
+  OfficeLLMConfig,
+  ManagerConfig,
+  WorkerConfig,
+  Task,
+  TaskResult,
+} from './types';
+
+// Re-export zod for convenience
+export { z } from 'zod';

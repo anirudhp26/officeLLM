@@ -1,0 +1,260 @@
+---
+title: "Providers"
+description: "officeLLM supports multiple LLM providers through an extensible provider system. Each agent can use different providers independently."
+---
+
+## Supported Providers
+
+### OpenAI
+
+<ParamField body="openai" required>
+  Provider type identifier
+</ParamField>
+
+```typescript
+provider: {
+  type: 'openai' as const,
+  apiKey: process.env.OPENAI_API_KEY!,
+  model: 'gpt-4',
+  temperature: 0.7,
+  maxTokens: 2000,
+}
+```
+
+**Supported Models:**
+- `gpt-4`
+- `gpt-4-turbo`
+- `gpt-4-turbo-preview`
+- `gpt-3.5-turbo`
+- `gpt-3.5-turbo-16k`
+
+### Anthropic
+
+<ParamField body="anthropic" required>
+  Provider type identifier
+</ParamField>
+
+```typescript
+provider: {
+  type: 'anthropic' as const,
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  model: 'claude-3-sonnet-20240229',
+  temperature: 0.7,
+  maxTokens: 4096,
+}
+```
+
+**Supported Models:**
+- `claude-3-opus-20240229`
+- `claude-3-sonnet-20240229`
+- `claude-3-haiku-20240307`
+- `claude-3-5-sonnet-20240620`
+- `claude-2.1`
+- `claude-2`
+- `claude-instant-1.2`
+
+### Google Gemini
+
+<ParamField body="gemini" required>
+  Provider type identifier
+</ParamField>
+
+```typescript
+provider: {
+  type: 'gemini' as const,
+  apiKey: process.env.GEMINI_API_KEY!,
+  model: 'gemini-pro',
+  temperature: 0.7,
+  maxTokens: 2048,
+}
+```
+
+**Supported Models:**
+- `gemini-pro`
+- `gemini-pro-vision`
+- `gemini-1.5-pro`
+- `gemini-1.5-flash`
+
+### OpenRouter
+
+<ParamField body="openrouter" required>
+  Provider type identifier
+</ParamField>
+
+```typescript
+provider: {
+  type: 'openrouter' as const,
+  apiKey: process.env.OPENROUTER_API_KEY!,
+  model: 'anthropic/claude-3-sonnet',
+  temperature: 0.7,
+  maxTokens: 4096,
+}
+```
+
+**Popular Models:**
+- `openai/gpt-4`
+- `anthropic/claude-3-opus`
+- `anthropic/claude-3-sonnet`
+- `meta-llama/llama-2-70b-chat`
+- `google/gemini-pro`
+
+## Provider Configuration
+
+All providers share a common configuration interface:
+
+```typescript
+interface BaseProviderConfig {
+  type: ProviderType;
+  apiKey: string;
+  model: string;
+  temperature?: number;    // 0-1, defaults to 0.7
+  maxTokens?: number;     // Maximum response length
+  // Provider-specific options...
+}
+```
+
+## Adding Custom Providers
+
+### 1. Create Provider Class
+
+```typescript
+import { BaseProvider, ProviderResponse, ProviderMessage, ToolDefinition } from 'officellm';
+
+export class CustomProvider extends BaseProvider {
+  constructor(config: CustomConfig) {
+    super(config);
+  }
+
+  async chat(
+    messages: ProviderMessage[],
+    tools?: ToolDefinition[]
+  ): Promise<ProviderResponse> {
+    // Implement your provider logic here
+    const response = await this.callCustomAPI(messages, tools);
+
+    return {
+      content: response.text,
+      toolCalls: response.toolCalls,
+      usage: response.usage,
+    };
+  }
+
+  getSupportedModels(): string[] {
+    return ['custom-model-1', 'custom-model-2'];
+  }
+
+  private async callCustomAPI(messages: ProviderMessage[], tools?: ToolDefinition[]) {
+    // Your API implementation
+  }
+}
+```
+
+### 2. Define Configuration Type
+
+```typescript
+export interface CustomConfig extends BaseProviderConfig {
+  type: 'custom';
+  customOption: string;
+  // Add custom configuration options
+}
+```
+
+### 3. Register Provider
+
+```typescript
+import { ProviderFactory } from 'officellm';
+
+ProviderFactory.register('custom', CustomProvider);
+```
+
+### 4. Use the Provider
+
+```typescript
+const manager = {
+  name: 'Manager',
+  provider: {
+    type: 'custom' as const,
+    apiKey: 'your-key',
+    model: 'custom-model-1',
+    customOption: 'value',
+  },
+  // ... rest of config
+};
+```
+
+## Provider Selection Guidelines
+
+### For Different Use Cases
+
+**Creative Tasks:**
+- Anthropic Claude models (excellent for reasoning and creativity)
+- OpenAI GPT-4 (versatile for various tasks)
+
+**Analytical Tasks:**
+- OpenAI GPT-4 (precise and analytical)
+- Anthropic Claude (strong mathematical reasoning)
+
+**Code Generation:**
+- OpenAI GPT-4 (excellent code generation)
+- Anthropic Claude (good for code explanation)
+
+**Cost Optimization:**
+- Anthropic Claude 3 Haiku (fast and cost-effective)
+- OpenAI GPT-3.5-turbo (budget-friendly)
+
+### Performance Comparison
+
+| Provider | Speed | Cost | Reasoning | Creativity |
+|----------|-------|------|-----------|------------|
+| OpenAI GPT-4 | Medium | High | Excellent | Excellent |
+| Claude 3 Opus | Slow | High | Excellent | Excellent |
+| Claude 3 Sonnet | Medium | Medium | Very Good | Very Good |
+| Claude 3 Haiku | Fast | Low | Good | Good |
+| Gemini Pro | Medium | Low | Good | Good |
+
+## Environment Variables
+
+```bash
+# OpenAI
+OPENAI_API_KEY=sk-...
+
+# Anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Google Gemini
+GEMINI_API_KEY=...
+
+# OpenRouter
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+## Error Handling
+
+Providers include built-in error handling:
+
+- **Rate Limits**: Automatic retry with exponential backoff
+- **Network Errors**: Graceful failure with error messages
+- **Invalid API Keys**: Clear error messages
+- **Model Not Found**: Fallback suggestions
+
+## Mock Providers
+
+For development and testing, officeLLM includes mock implementations:
+
+```typescript
+// All providers work without API keys in mock mode
+const office = new OfficeLLM({
+  manager: {
+    name: 'Test Manager',
+    provider: {
+      type: 'openai' as const,
+      apiKey: 'mock-key', // Mock implementations ignore this
+      model: 'gpt-4',
+    },
+    // ... config
+  },
+  workers: [],
+});
+```
+
+Mock providers return realistic responses for testing workflows.
