@@ -10,21 +10,23 @@ A TypeScript library for building multi-model agentic architectures with manager
 
 officeLLM provides a simplified framework for building multi-agent AI systems with:
 
-- **Manager Agents** that coordinate and delegate tasks using different LLM providers
-- **Worker Agents** that execute specialized tasks with their own tools
-- **Extensible Provider System** supporting OpenAI, Anthropic, Gemini, and OpenRouter
-- **Zod Type Safety** for all tool parameters and configurations
-- **FunctionDefinitions Format** for seamless AI package integration
+- **Manager Agents** that coordinate and delegate tasks to specialized workers
+- **Worker Agents** that execute domain-specific tasks using their own tools
+- **Provider System** supporting OpenAI, Anthropic, Gemini, and OpenRouter
+- **Type-Safe Configuration** with full TypeScript support and Zod validation
+- **Simplified API** for easy integration and rapid development
+- **Extensible Tool System** for custom functionality
 
 ## Features
 
-- 🏢 **Multi-Agent Architecture**: Managers orchestrate teams of specialized workers
-- 🛠️ **Extensible Tool System**: Easy-to-implement tools for custom functionality
-- 🎯 **Intelligent Routing**: Automatic task assignment based on expertise matching
-- 🔄 **Multiple Routing Strategies**: Best-match, round-robin, least-loaded, and random
-- 📊 **Performance Tracking**: Built-in metrics and monitoring
-- 🔧 **TypeScript First**: Full type safety and excellent developer experience
+- 🏢 **Simplified Multi-Agent Architecture**: Manager coordinates specialized worker agents
+- 🛠️ **Extensible Tool System**: Easy-to-implement tools with type-safe parameters
+- 🔌 **Provider System**: Support for OpenAI, Anthropic, Gemini, and OpenRouter
+- 🎯 **Intelligent Task Delegation**: Manager analyzes tasks and delegates to appropriate workers
+- 📊 **Performance Tracking**: Built-in metrics and usage monitoring
+- 🔧 **TypeScript First**: Full type safety with Zod validation and excellent DX
 - 📚 **Production Ready**: Comprehensive error handling and logging
+- ⚡ **Easy Integration**: Simple constructor-based setup
 
 ## Installation
 
@@ -41,20 +43,28 @@ import { z } from 'zod';
 // Define worker configurations
 const mathWorker = {
   name: 'Math Solver',
-  description: 'Specialized in mathematical calculations',
+  description: 'Specialized in mathematical calculations and equation solving',
   provider: {
     type: 'openai' as const,
     apiKey: process.env.OPENAI_API_KEY!,
     model: 'gpt-4',
     temperature: 0.1,
   },
-  systemPrompt: 'You are a mathematical expert. Solve problems step by step.',
+  systemPrompt: 'You are a mathematical expert. Solve problems step by step and provide clear explanations.',
   tools: [
     {
       name: 'calculate',
       description: 'Perform mathematical calculations',
       parameters: z.object({
-        expression: z.string().describe('Math expression to evaluate'),
+        expression: z.string().describe('The mathematical expression to evaluate'),
+      }),
+    },
+    {
+      name: 'analyze_equation',
+      description: 'Analyze and solve equations',
+      parameters: z.object({
+        equation: z.string().describe('The equation to analyze'),
+        variables: z.array(z.string()).optional().describe('Variables in the equation'),
       }),
     },
   ],
@@ -63,20 +73,22 @@ const mathWorker = {
 // Manager configuration
 const manager = {
   name: 'Project Manager',
-  description: 'Coordinates AI worker agents',
+  description: 'Coordinates and delegates tasks to specialized AI worker agents',
   provider: {
     type: 'anthropic' as const,
     apiKey: process.env.ANTHROPIC_API_KEY!,
     model: 'claude-3-sonnet-20240229',
     temperature: 0.7,
   },
-  systemPrompt: 'You coordinate specialized AI agents to complete tasks.',
+  systemPrompt: `You are a project manager coordinating a team of specialized AI agents.
+When given a task, analyze it and delegate to the appropriate worker agent.
+Always provide clear instructions and coordinate between workers when needed.`,
   tools: [
     {
       name: 'math_solver',
-      description: 'Delegate math tasks to the math expert',
+      description: 'Delegate mathematical tasks to the math expert',
       parameters: z.object({
-        task: z.string().describe('Math task to solve'),
+        task: z.string().describe('The mathematical task to solve'),
         priority: z.enum(['low', 'medium', 'high']).default('medium'),
       }),
     },
@@ -92,7 +104,7 @@ const office = new OfficeLLM({
 // Execute a task
 const result = await office.executeTask({
   title: 'Calculate compound interest',
-  description: 'What is the compound interest on $1000 at 5% for 3 years?',
+  description: 'Calculate the compound interest on $1000 at 5% annual rate for 3 years.',
   priority: 'high',
 });
 
@@ -103,51 +115,61 @@ console.log('Result:', result.content);
 
 ### Core Components
 
+#### OfficeLLM
+The main orchestrator that manages the relationship between managers and workers:
+- Initializes with manager and worker configurations
+- Provides methods to execute tasks and call workers directly
+- Handles task delegation through the manager agent
+
 #### Manager
-Managers are the coordinators that:
-- Accept tasks from users
-- Analyze task requirements
-- Route tasks to appropriate workers based on expertise
-- Monitor task progress and handle failures
-- Support multiple routing strategies
+Manager agents coordinate task execution:
+- Accept tasks from users through the `executeTask()` method
+- Analyze task requirements and delegate to appropriate workers
+- Can call worker tools using function calling format
+- Handle conversation flow between user, manager, and workers
 
 #### Worker
-Workers are specialized agents that:
-- Have specific roles (analyst, researcher, coder, etc.)
-- Possess domain expertise with confidence scores
-- Can use different LLM models
-- Execute tasks using available tools
-- Report performance metrics
+Worker agents execute specialized tasks:
+- Have domain-specific configurations and tools
+- Use different LLM providers and models
+- Execute tasks with their own tool sets
+- Return structured results with success/error status
+
+#### Provider System
+Extensible provider architecture supporting multiple LLM services:
+- **OpenAI**: GPT-3.5, GPT-4, and other OpenAI models
+- **Anthropic**: Claude models via API
+- **Google Gemini**: Gemini Pro and other Google models
+- **OpenRouter**: Access to various providers through OpenRouter
 
 #### Tools
-Tools extend agent capabilities:
-- Implement the `Tool` interface
-- Provide structured parameter schemas
+Tools extend agent capabilities with type-safe parameters:
+- Implement the `Tool` interface with Zod schemas
+- Provide structured parameter validation
 - Handle execution with error management
-- Support availability checking
+- Support availability checking and metadata
 
 ### Task Flow
 
-1. **Task Submission**: User submits a task to a manager
-2. **Analysis**: Manager analyzes task requirements
-3. **Routing**: Manager selects the best worker based on routing strategy
-4. **Execution**: Worker breaks down task and uses tools to complete it
-5. **Completion**: Results are returned to the user
+1. **Task Submission**: User submits a task to OfficeLLM via `executeTask()`
+2. **Manager Analysis**: Manager analyzes the task and determines which worker to delegate to
+3. **Worker Execution**: Manager calls the appropriate worker using function calling
+4. **Tool Usage**: Worker may use tools to complete the task
+5. **Result Return**: Final results are returned to the user
 
-## Advanced Usage
+### Direct Worker Calls
 
-### Custom Routing Strategy
+For simple use cases, workers can be called directly:
 
 ```typescript
-import { Manager, RoutingStrategy } from 'officellm';
-
-// Create a manager with custom routing
-const manager = office.addManager({
-  name: 'Senior Manager',
-  routingStrategy: RoutingStrategy.BEST_MATCH,
-  maxConcurrentTasks: 5
+// Call a worker directly without going through the manager
+const result = await office.callWorker('math_solver', {
+  task: 'Calculate 15% of 200',
+  priority: 'medium'
 });
 ```
+
+## Advanced Usage
 
 ### Building Custom Tools
 
@@ -195,29 +217,97 @@ class WeatherTool extends BaseTool {
 }
 ```
 
-### Worker Expertise Configuration
+### Multi-Worker Coordination
 
 ```typescript
-const researcher = office.addWorker({
-  name: 'Research Specialist',
-  role: 'researcher',
-  expertise: [
+import { OfficeLLM } from 'officellm';
+import { z } from 'zod';
+
+// Define multiple specialized workers
+const mathWorker = {
+  name: 'Math Solver',
+  description: 'Handles mathematical calculations and analysis',
+  provider: {
+    type: 'openai' as const,
+    apiKey: process.env.OPENAI_API_KEY!,
+    model: 'gpt-4',
+    temperature: 0.1,
+  },
+  systemPrompt: 'You are a mathematical expert...',
+  tools: [
     {
-      domain: 'academic_research',
-      skills: ['literature_review', 'data_analysis', 'hypothesis_testing'],
-      confidence: 0.9
+      name: 'calculate',
+      description: 'Perform mathematical calculations',
+      parameters: z.object({
+        expression: z.string().describe('Math expression to evaluate'),
+      }),
+    },
+  ],
+};
+
+const researchWorker = {
+  name: 'Research Assistant',
+  description: 'Handles information gathering and analysis',
+  provider: {
+    type: 'anthropic' as const,
+    apiKey: process.env.ANTHROPIC_API_KEY!,
+    model: 'claude-3-sonnet-20240229',
+    temperature: 0.3,
+  },
+  systemPrompt: 'You are a research expert...',
+  tools: [
+    {
+      name: 'web_search',
+      description: 'Search the web for information',
+      parameters: z.object({
+        query: z.string().describe('Search query'),
+        limit: z.number().min(1).max(20).default(10),
+      }),
+    },
+  ],
+};
+
+// Manager that can coordinate between workers
+const manager = {
+  name: 'Project Manager',
+  description: 'Coordinates complex multi-step tasks',
+  provider: {
+    type: 'openai' as const,
+    apiKey: process.env.OPENAI_API_KEY!,
+    model: 'gpt-4',
+    temperature: 0.7,
+  },
+  systemPrompt: 'You coordinate specialized AI agents to complete complex tasks...',
+  tools: [
+    {
+      name: 'math_solver',
+      description: 'Delegate to math expert',
+      parameters: z.object({
+        task: z.string().describe('Math task to solve'),
+        priority: z.enum(['low', 'medium', 'high']).default('medium'),
+      }),
     },
     {
-      domain: 'web_research',
-      skills: ['information_gathering', 'source_evaluation'],
-      confidence: 0.85
-    }
+      name: 'research_assistant',
+      description: 'Delegate to research expert',
+      parameters: z.object({
+        query: z.string().describe('Research query'),
+        depth: z.enum(['basic', 'detailed', 'comprehensive']).default('detailed'),
+      }),
+    },
   ],
-  llmConfig: {
-    provider: 'anthropic',
-    model: 'claude-3-sonnet-20240229',
-    temperature: 0.3
-  }
+};
+
+const office = new OfficeLLM({
+  manager,
+  workers: [mathWorker, researchWorker],
+});
+
+// Execute complex task requiring multiple workers
+const result = await office.executeTask({
+  title: 'Data Analysis Report',
+  description: 'Analyze sales data and research market trends',
+  priority: 'high',
 });
 ```
 
@@ -225,73 +315,145 @@ const researcher = office.addWorker({
 
 ### OfficeLLM
 
-#### `OfficeLLM.createDefault(config?)`
-Creates a default officeLLM setup with one manager.
-
-#### `addManager(config)`
-Adds a new manager to the system.
-
-#### `addWorker(config, managerId?)`
-Adds a worker to the system, optionally assigning to a specific manager.
-
-#### `addToolToWorker(workerId, tool)`
-Adds a tool to a specific worker.
-
-#### `submitTask(task, managerId?)`
-Submits a task for execution.
-
-#### `getTaskStatus(taskId)`
-Gets the current status of a task.
-
-#### `cancelTask(taskId)`
-Cancels a running task.
-
-#### `getStats()`
-Returns system statistics.
-
-### Manager
-
-#### Routing Strategies
-- `BEST_MATCH`: Routes to worker with highest expertise match
-- `LEAST_LOADED`: Routes to worker with fewest active tasks
-- `ROUND_ROBIN`: Cycles through workers evenly
-- `RANDOM`: Random worker selection
-
-### Worker Roles
-- `analyst`: Data analysis and interpretation
-- `researcher`: Information gathering and synthesis
-- `writer`: Content creation and editing
-- `coder`: Programming and technical implementation
-- `reviewer`: Quality assurance and validation
-- `specialist`: Domain-specific expertise
-
-## Configuration
-
-### LLM Configuration
-
+#### Constructor
 ```typescript
-interface LLMConfig {
-  provider: string;        // 'openai', 'anthropic', 'google', etc.
-  model: string;          // Model identifier
-  apiKey?: string;        // API key (can be set via env)
-  temperature?: number;   // Creativity/randomness (0-1)
-  maxTokens?: number;     // Maximum response length
-  // ... additional provider-specific options
+new OfficeLLM(config: OfficeLLMConfig)
+```
+Creates a new OfficeLLM instance with manager and workers.
+
+#### `executeTask(task: Task): Promise<TaskResult>`
+Executes a task through the manager, which delegates to appropriate workers.
+
+#### `callWorker(workerName: string, params: Record<string, any>): Promise<TaskResult>`
+Calls a specific worker directly with parameters.
+
+#### `getWorkers(): string[]`
+Returns a list of available worker names.
+
+#### `getManager(): { name: string; description: string }`
+Returns manager information.
+
+### Configuration Types
+
+#### `OfficeLLMConfig`
+```typescript
+interface OfficeLLMConfig {
+  manager: ManagerConfig;
+  workers: WorkerConfig[];
 }
 ```
 
-### Worker Configuration
+#### `ManagerConfig`
+```typescript
+interface ManagerConfig {
+  name: string;
+  description: string;
+  provider: ProviderConfig;
+  systemPrompt: string;
+  tools: ToolDefinition[];
+}
+```
 
+#### `WorkerConfig`
 ```typescript
 interface WorkerConfig {
   name: string;
-  role: WorkerRole;
-  expertise: Expertise[];
-  llmConfig: LLMConfig;
   description?: string;
-  maxConcurrentTasks?: number;
-  capabilities?: string[];
+  provider: ProviderConfig;
+  systemPrompt: string;
+  tools: ToolDefinition[];
 }
+```
+
+#### `Task`
+```typescript
+interface Task {
+  title: string;
+  description: string;
+  priority?: 'low' | 'medium' | 'high';
+  [key: string]: any; // Additional parameters
+}
+```
+
+#### `TaskResult`
+```typescript
+interface TaskResult {
+  success: boolean;
+  content: string;
+  toolCalls?: any[];
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  error?: string;
+}
+```
+
+## Configuration
+
+### Provider Configuration
+
+#### OpenAI Provider
+```typescript
+const openaiConfig = {
+  type: 'openai' as const,
+  apiKey: process.env.OPENAI_API_KEY!,
+  model: 'gpt-4', // or 'gpt-3.5-turbo'
+  temperature: 0.7,
+  maxTokens: 1000,
+  // Optional parameters
+  topP: 1,
+  frequencyPenalty: 0,
+  presencePenalty: 0,
+};
+```
+
+#### Anthropic Provider
+```typescript
+const anthropicConfig = {
+  type: 'anthropic' as const,
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  model: 'claude-3-sonnet-20240229', // or 'claude-3-haiku-20240307'
+  temperature: 0.7,
+  maxTokens: 1000,
+  // Optional parameters
+  topP: 1,
+};
+```
+
+#### Google Gemini Provider
+```typescript
+const geminiConfig = {
+  type: 'gemini' as const,
+  apiKey: process.env.GEMINI_API_KEY!,
+  model: 'gemini-pro', // or 'gemini-pro-vision'
+  temperature: 0.7,
+  maxTokens: 1000,
+};
+```
+
+#### OpenRouter Provider
+```typescript
+const openRouterConfig = {
+  type: 'openrouter' as const,
+  apiKey: process.env.OPENROUTER_API_KEY!,
+  model: 'anthropic/claude-3-haiku', // or any supported model
+  temperature: 0.7,
+  maxTokens: 1000,
+};
+```
+
+### Environment Variables
+
+Set your API keys as environment variables:
+
+```bash
+# Required API keys (set at least one)
+export OPENAI_API_KEY="your-openai-api-key"
+export ANTHROPIC_API_KEY="your-anthropic-api-key"
+export GEMINI_API_KEY="your-gemini-api-key"
+export OPENROUTER_API_KEY="your-openrouter-api-key"
 ```
 
 ## Error Handling
@@ -300,26 +462,38 @@ officeLLM provides comprehensive error handling:
 
 ```typescript
 try {
-  const task = await office.submitTask(complexTask);
-  // Task submitted successfully
+  const result = await office.executeTask({
+    title: 'Complex Task',
+    description: 'A task that might fail',
+    priority: 'high',
+  });
+
+  if (result.success) {
+    console.log('Task completed:', result.content);
+  } else {
+    console.error('Task failed:', result.error);
+  }
 } catch (error) {
-  if (error.message.includes('No manager available')) {
-    // Handle no manager scenario
-  } else if (error.message.includes('No suitable worker')) {
-    // Handle routing failure
+  console.error('Execution error:', error);
+}
+
+// Handle worker-specific errors
+try {
+  const result = await office.callWorker('math_solver', {
+    task: 'invalid task',
+    priority: 'high',
+  });
+
+  if (!result.success) {
+    console.error('Worker error:', result.error);
+  }
+} catch (error) {
+  if (error.message.includes('Worker') && error.message.includes('not found')) {
+    console.error('Worker not found:', error.message);
+  } else {
+    console.error('Unexpected error:', error);
   }
 }
-```
-
-## Performance Monitoring
-
-Track system performance with built-in metrics:
-
-```typescript
-const stats = office.getStats();
-console.log(`Active tasks: ${stats.activeTasks}`);
-console.log(`Completed tasks: ${stats.completedTasks}`);
-console.log(`Success rate: ${(stats.completedTasks / stats.totalTasks * 100).toFixed(1)}%`);
 ```
 
 ## Best Practices
@@ -334,11 +508,25 @@ console.log(`Success rate: ${(stats.completedTasks / stats.totalTasks * 100).toF
 
 Check the `examples/` directory for complete implementations:
 
-- Basic setup and task submission
-- Custom tool development
-- Multi-worker collaboration
-- Performance monitoring
-- Error handling patterns
+- `basic-usage.ts`: Basic setup and task submission
+- `simplified-usage.ts`: Advanced usage with multiple workers and complex tasks
+- Custom tool development patterns
+- Multi-worker coordination examples
+- Error handling and direct worker calls
+
+### Running Examples
+
+```bash
+# Install dependencies
+npm install
+
+# Set your API keys
+export OPENAI_API_KEY="your-api-key"
+export ANTHROPIC_API_KEY="your-api-key"
+
+# Run an example
+npx ts-node examples/simplified-usage.ts
+```
 
 ## Contributing
 
