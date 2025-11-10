@@ -222,6 +222,7 @@ class WorkerAgent {
   public config: WorkerConfig;
   private provider: IProvider;
   private toolImplementations: Record<string, ToolImplementation>;
+  private messages: ProviderMessage[] = [];
 
   constructor(config: WorkerConfig) {
     this.config = config;
@@ -233,7 +234,7 @@ class WorkerAgent {
    * Execute worker with given parameters
    */
   async execute(params: Record<string, any>): Promise<TaskResult> {
-    const messages: ProviderMessage[] = [
+    this.messages.push(
       {
         role: 'system',
         content: this.config.systemPrompt,
@@ -243,8 +244,8 @@ class WorkerAgent {
         content: Object.entries(params)
           .map(([key, value]) => `${key}: ${value}`)
           .join('\n'),
-      },
-    ];
+      }
+    );
 
     const maxIterations = 15; // Workers have slightly fewer iterations than manager
     let iteration = 0;
@@ -255,7 +256,7 @@ class WorkerAgent {
         iteration++;
         logger.info(`WORKER:${this.config.name}`, `Iteration ${iteration}/${maxIterations}`);
 
-      const response = await this.provider.chat(messages, this.config.tools);
+      const response = await this.provider.chat(this.messages, this.config.tools);
 
         // Accumulate usage
         if (response.usage) {
@@ -278,7 +279,7 @@ class WorkerAgent {
         }
 
         // Add assistant message to history
-        messages.push({
+        this.messages.push({
           role: 'assistant',
           content: response.content,
           toolCalls: response.toolCalls,
@@ -296,7 +297,7 @@ class WorkerAgent {
           logger.debug(`WORKER:${this.config.name}`, `Tool result: ${toolResult}`);
 
           // Add tool result as tool response
-          messages.push({
+          this.messages.push({
             role: 'tool',
             content: toolResult,
             toolCallId: toolCall.id,
@@ -305,7 +306,7 @@ class WorkerAgent {
 
         // Continue to next iteration - worker will decide what to do next
       }
-
+      
       // Max iterations reached
       logger.warn(`WORKER:${this.config.name}`, `Maximum iterations (${maxIterations}) reached`);
       return {
@@ -351,7 +352,7 @@ class WorkerAgent {
     // Create a simple schema from worker parameters
     // In a real implementation, this would be more sophisticated
     return z.object({
-      task: z.string().describe('The task to perform'),
+      task: z.string().describe('The task to perform, in detail'),
       priority: z.enum(['low', 'medium', 'high']).describe('Task priority level').default('high'),
     });
   }

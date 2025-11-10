@@ -210,17 +210,57 @@ export class GeminiProvider extends BaseProvider {
   }
 
   /**
+   * Recursively remove additionalProperties and other unsupported fields from JSON schema
+   * Gemini API doesn't support these fields, so we need to clean them out
+   */
+  private cleanSchemaForGemini(obj: any): any {
+    if (!obj || typeof obj !== 'object') {
+      return obj;
+    }
+
+    // Handle arrays
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.cleanSchemaForGemini(item));
+    }
+
+    // Create a new object without the unsupported fields
+    const cleaned: any = {};
+
+    for (const key in obj) {
+      // Skip unsupported fields
+      if (key === 'additionalProperties' || key === '$schema' || key === 'definitions') {
+        continue;
+      }
+
+      const value = obj[key];
+
+      // Recursively clean nested objects and arrays
+      if (value && typeof value === 'object') {
+        cleaned[key] = this.cleanSchemaForGemini(value);
+      } else {
+        cleaned[key] = value;
+      }
+    }
+
+    return cleaned;
+  }
+
+  /**
    * Convert ToolDefinition to Gemini FunctionDeclaration
    */
   private convertToolToFunctionDeclaration(tool: ToolDefinition) {
     const schema = z.toJSONSchema(tool.parameters) as any;
+    
+    // Clean the schema to remove all additionalProperties fields recursively
+    const cleanedSchema = this.cleanSchemaForGemini(schema);
+    
     return {
       name: tool.name,
       description: tool.description,
       parameters: {
         type: SchemaType.OBJECT,
-        properties: schema.properties,
-        required: schema.required,
+        properties: cleanedSchema.properties || {},
+        required: cleanedSchema.required || [],
       },
     };
   }
