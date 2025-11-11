@@ -1,6 +1,6 @@
 {
   "name": "officellm",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A TypeScript library for multi-model agentic architecture with managers and workers",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -353,6 +353,8 @@ class WorkerAgent {
     // In a real implementation, this would be more sophisticated
     return z.object({
       task: z.string().describe('The task to perform, in detail'),
+      context: z.string().describe('The context of the task'),
+      metadata: z.object(z.any()).describe('The metadata of the task').required(),
       priority: z.enum(['low', 'medium', 'high']).describe('Task priority level').default('high'),
     });
   }
