@@ -250,7 +250,7 @@ export class GeminiProvider extends BaseProvider {
    */
   private convertToolToFunctionDeclaration(tool: ToolDefinition) {
     const schema = z.toJSONSchema(tool.parameters) as any;
-    
+
     // Clean the schema to remove all additionalProperties fields recursively
     const cleanedSchema = this.cleanSchemaForGemini(schema);
     

@@ -109,7 +109,8 @@ export interface ManagerConfig {
   description: string;
   provider: ProviderConfig;
   systemPrompt: string;
-
+  maxIterations?: number;
+  contextWindow?: number;
   /**
    * @deprecated - tools are no longer supported (workers are served as tools to the manager)
    */
@@ -151,6 +152,8 @@ export interface WorkerConfig {
    * ```
    */
   toolImplementations?: Record<string, ToolImplementation>;
+  maxIterations?: number;
+  contextWindow?: number;
 }
 
 /**

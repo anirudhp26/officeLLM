@@ -90,10 +90,14 @@ export class OfficeLLM {
 class ManagerAgent {
   public config: ManagerConfig;
   private provider: IProvider;
+  private maxIterations: number;
+  private contextWindow: number;
 
   constructor(config: ManagerConfig) {
     this.config = config;
     this.provider = createProvider(config.provider);
+    this.maxIterations = config.maxIterations || 20;
+    this.contextWindow = config.contextWindow || 10; // 10 messages
   }
 
   async executeTask(task: Task, workers: Map<string, WorkerAgent>): Promise<TaskResult> {
@@ -115,14 +119,13 @@ class ManagerAgent {
       parameters: worker.getToolSchema(),
     }));
 
-    const maxIterations = 20; // Safety limit to prevent infinite loops
     let iteration = 0;
     let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
     try {
-      while (iteration < maxIterations) {
+      while (iteration < this.maxIterations) {
         iteration++;
-        logger.info('MANAGER', `Iteration ${iteration}/${maxIterations}`);
+        logger.info('MANAGER', `Iteration ${iteration}/${this.maxIterations}`);
 
       const response = await this.provider.chat(messages, workerTools);
 
@@ -196,7 +199,7 @@ class ManagerAgent {
       }
 
       // Max iterations reached
-      logger.warn('MANAGER', `Maximum iterations (${maxIterations}) reached`);
+      logger.warn('MANAGER', `Maximum iterations (${this.maxIterations}) reached`);
       return {
         success: true,
         content: 'Task execution stopped: Maximum iterations reached. Partial results may be available.',
@@ -223,11 +226,14 @@ class WorkerAgent {
   private provider: IProvider;
   private toolImplementations: Record<string, ToolImplementation>;
   private messages: ProviderMessage[] = [];
-
+  private maxIterations: number;
+  private contextWindow: number;
   constructor(config: WorkerConfig) {
     this.config = config;
     this.provider = createProvider(config.provider);
     this.toolImplementations = config.toolImplementations || {};
+    this.maxIterations = config.maxIterations || 25;
+    this.contextWindow = config.contextWindow || 10;
   }
 
   /**
@@ -247,14 +253,13 @@ class WorkerAgent {
       }
     );
 
-    const maxIterations = 15; // Workers have slightly fewer iterations than manager
     let iteration = 0;
     let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
     try {
-      while (iteration < maxIterations) {
+      while (iteration < this.maxIterations) {
         iteration++;
-        logger.info(`WORKER:${this.config.name}`, `Iteration ${iteration}/${maxIterations}`);
+        logger.info(`WORKER:${this.config.name}`, `Iteration ${iteration}/${this.maxIterations}`);
 
       const response = await this.provider.chat(this.messages, this.config.tools);
 
@@ -308,7 +313,7 @@ class WorkerAgent {
       }
       
       // Max iterations reached
-      logger.warn(`WORKER:${this.config.name}`, `Maximum iterations (${maxIterations}) reached`);
+      logger.warn(`WORKER:${this.config.name}`, `Maximum iterations (${this.maxIterations}) reached`);
       return {
         success: true,
         content: 'Worker execution stopped: Maximum iterations reached. Partial results may be available.',
@@ -354,7 +359,7 @@ class WorkerAgent {
     return z.object({
       task: z.string().describe('The task to perform, in detail'),
       context: z.string().describe('The context of the task'),
-      metadata: z.object(z.any()).describe('The metadata of the task').required(),
+      metadata: z.object({}).describe('The metadata of the task').required(),
       priority: z.enum(['low', 'medium', 'high']).describe('Task priority level').default('high'),
     });
   }
