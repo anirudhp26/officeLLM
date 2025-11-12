@@ -145,7 +145,7 @@ class ManagerAgent {
 
     // Create tool definitions for available workers
     const workerTools = Array.from(workers.entries())
-      .filter(([name]) => !this.config.restrictedWorkers || this.config.restrictedWorkers.includes(name)) // filter out restricted workers
+      .filter(([name]) => !this.config.restrictedWorkers || !this.config.restrictedWorkers.includes(name)) // filter out restricted workers
       .map(([name, worker]) => ({
           name,
           description: worker.config.description || `${name} agent`,
