@@ -144,11 +144,13 @@ class ManagerAgent {
     ];
 
     // Create tool definitions for available workers
-    const workerTools = Array.from(workers.entries()).filter(([name]) => !this.config.restrictedWorkers || !this.config.restrictedWorkers.includes(name)).map(([name, worker]) => ({
-      name,
-      description: worker.config.description || `${name} agent`,
-      parameters: worker.getToolSchema(),
-    }));
+    const workerTools = Array.from(workers.entries())
+      .filter(([name]) => !this.config.restrictedWorkers || this.config.restrictedWorkers.includes(name)) // filter out restricted workers
+      .map(([name, worker]) => ({
+          name,
+          description: worker.config.description || `${name} agent`,
+          parameters: worker.getToolSchema(),
+      }));
 
     let iteration = 0;
     let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -197,7 +199,7 @@ class ManagerAgent {
         for (const toolCall of response.toolCalls) {
           const worker = workers.get(toolCall.function.name);
           
-          if (worker && (!this.config.restrictedWorkers || this.config.restrictedWorkers.includes(toolCall.function.name))) {
+          if (worker && (!this.config.restrictedWorkers || !this.config.restrictedWorkers.includes(toolCall.function.name))) { // check if worker is not restricted
             logger.info('MANAGER', `Executing worker: ${toolCall.function.name}`);
             const workerParams = JSON.parse(toolCall.function.arguments);
             logger.debug('MANAGER', `Worker parameters: ${JSON.stringify(workerParams)}`);
