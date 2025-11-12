@@ -30,7 +30,8 @@
       "group": "Core Concepts",
       "pages": [
         "core-concepts/architecture",
-        "core-concepts/providers"
+        "core-concepts/providers",
+        "core-concepts/memory"
       ]
     },
     {

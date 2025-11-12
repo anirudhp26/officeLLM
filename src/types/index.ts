@@ -3,6 +3,7 @@
  */
 
 import { ProviderConfig, ToolDefinition } from '../providers';
+import { MemoryConfig } from '../memory';
 
 /**
  * Represents a unique identifier for agents, tasks, and messages
@@ -162,6 +163,29 @@ export interface WorkerConfig {
 export interface OfficeLLMConfig {
   manager: ManagerConfig;
   workers: WorkerConfig[];
+  /**
+   * Optional memory configuration for storing conversation history
+   * Supports in-memory and Redis storage, with extensibility for custom implementations
+   * 
+   * @example
+   * ```typescript
+   * // In-memory storage
+   * memory: {
+   *   type: 'in-memory',
+   *   maxConversations: 1000
+   * }
+   * 
+   * // Redis storage
+   * memory: {
+   *   type: 'redis',
+   *   host: 'localhost',
+   *   port: 6379,
+   *   password: 'secret',
+   *   ttl: 86400 // 24 hours
+   * }
+   * ```
+   */
+  memory?: MemoryConfig;
 }
 
 /**

@@ -1,0 +1,446 @@
+---
+title: "Memory System"
+description: "Store and retrieve conversation history with flexible storage backends"
+---
+
+# Memory System
+
+OfficeLLM includes a built-in memory system that allows you to persist conversation history from both managers and workers. The memory system is designed to be extensible, allowing you to add custom storage backends easily.
+
+## Overview
+
+The memory system automatically stores:
+- All manager conversations (task coordination)
+- All worker conversations (tool executions)
+- Message history for each conversation
+- Metadata (timestamps, agent info, provider details)
+
+## Built-in Storage Options
+
+### In-Memory Storage
+
+The simplest option - stores conversations in memory during runtime. Data is lost when the application stops.
+
+```typescript
+import { OfficeLLM } from 'officellm';
+
+const office = new OfficeLLM({
+  memory: {
+    type: 'in-memory',
+    maxConversations: 1000, // Optional: limit stored conversations
+  },
+  manager: { /* ... */ },
+  workers: [ /* ... */ ],
+});
+```
+
+**When to use:**
+- Development and testing
+- Single-session applications
+- When persistence isn't required
+- Quick prototyping
+
+**Configuration Options:**
+- `maxConversations` (optional): Maximum number of conversations to store. When limit is reached, oldest conversations are removed.
+
+### Redis Storage
+
+Persistent storage using Redis. Conversations survive application restarts and can be shared across instances.
+
+```typescript
+const office = new OfficeLLM({
+  memory: {
+    type: 'redis',
+    host: 'localhost',
+    port: 6379,
+    password: 'your-password', // Optional
+    db: 0, // Optional: Redis database number
+    keyPrefix: 'myapp:', // Optional: prefix for all keys
+    ttl: 86400, // Optional: Time-to-live in seconds (24 hours)
+  },
+  manager: { /* ... */ },
+  workers: [ /* ... */ ],
+});
+```
+
+**Prerequisites:**
+1. Install the Redis client: `npm install redis`
+2. Run Redis server (e.g., `docker run -p 6379:6379 redis`)
+
+**When to use:**
+- Production applications
+- Multi-instance deployments
+- When conversation history needs to persist
+- Sharing conversations across services
+
+**Configuration Options:**
+- `host`: Redis server hostname
+- `port`: Redis server port
+- `password` (optional): Authentication password
+- `db` (optional): Redis database number (default: 0)
+- `keyPrefix` (optional): Prefix for all Redis keys (default: 'officellm:conv:')
+- `ttl` (optional): Time-to-live for conversations in seconds
+
+## Using Memory
+
+### Accessing Memory
+
+```typescript
+const office = new OfficeLLM({ /* config */ });
+
+// Get the memory instance
+const memory = office.getMemory();
+
+if (memory) {
+  // Memory is configured and available
+}
+```
+
+### Querying Conversations
+
+```typescript
+// Get all conversations
+const allConversations = await memory.queryConversations();
+
+// Filter by agent type
+const managerConvs = await memory.queryConversations({
+  agentType: 'manager'
+});
+
+// Filter by specific agent
+const workerConvs = await memory.queryConversations({
+  agentType: 'worker',
+  agentName: 'calculator'
+});
+
+// Filter by date range
+const recentConvs = await memory.queryConversations({
+  startDate: new Date('2024-01-01'),
+  endDate: new Date('2024-12-31')
+});
+
+// Pagination
+const pagedConvs = await memory.queryConversations({
+  limit: 10,
+  offset: 0
+});
+```
+
+### Retrieving Specific Conversations
+
+```typescript
+// Get a conversation by ID
+const conversation = await memory.getConversation('conversation-id');
+
+if (conversation) {
+  console.log('Agent:', conversation.agentName);
+  console.log('Messages:', conversation.messages.length);
+  console.log('Created:', conversation.createdAt);
+  console.log('Updated:', conversation.updatedAt);
+  console.log('Metadata:', conversation.metadata);
+}
+```
+
+### Getting Statistics
+
+```typescript
+const stats = await memory.getStats();
+
+console.log('Total conversations:', stats.totalConversations);
+console.log('Total messages:', stats.totalMessages);
+console.log('Oldest conversation:', stats.oldestConversation);
+console.log('Newest conversation:', stats.newestConversation);
+```
+
+### Cleanup
+
+```typescript
+// Clear all conversations (useful for testing)
+await memory.clear();
+
+// Close memory connection (important for Redis)
+await office.close();
+```
+
+## Conversation Structure
+
+Each stored conversation has the following structure:
+
+```typescript
+interface StoredConversation {
+  id: string;                    // Unique conversation ID
+  agentType: 'manager' | 'worker'; // Type of agent
+  agentName: string;              // Name of the agent
+  messages: ProviderMessage[];    // Array of messages
+  createdAt: Date;                // Creation timestamp
+  updatedAt: Date;                // Last update timestamp
+  metadata?: {                    // Additional metadata
+    maxIterations: number;
+    provider: string;
+    model: string;
+    tools?: string[];             // For workers
+  };
+}
+```
+
+## Creating Custom Memory Providers
+
+You can create custom storage backends by extending `BaseMemory`:
+
+```typescript
+import { BaseMemory, BaseMemoryConfig, StoredConversation, registerMemory } from 'officellm';
+
+// 1. Define your configuration interface
+interface PostgresConfig extends BaseMemoryConfig {
+  type: 'postgres';
+  connectionString: string;
+  tableName?: string;
+}
+
+// 2. Implement the BaseMemory interface
+class PostgresMemory extends BaseMemory {
+  private client: any;
+
+  constructor(config: PostgresConfig) {
+    super(config);
+    // Initialize your storage client
+  }
+
+  async storeConversation(conversation: StoredConversation): Promise<void> {
+    // Implementation
+  }
+
+  async getConversation(id: string): Promise<StoredConversation | null> {
+    // Implementation
+  }
+
+  async updateConversation(id: string, messages: ProviderMessage[]): Promise<void> {
+    // Implementation
+  }
+
+  async deleteConversation(id: string): Promise<void> {
+    // Implementation
+  }
+
+  async queryConversations(options?: QueryOptions): Promise<StoredConversation[]> {
+    // Implementation
+  }
+
+  async clear(): Promise<void> {
+    // Implementation
+  }
+
+  async getStats(): Promise<{
+    totalConversations: number;
+    totalMessages: number;
+    oldestConversation?: Date;
+    newestConversation?: Date;
+  }> {
+    // Implementation
+  }
+
+  async close(): Promise<void> {
+    // Cleanup
+  }
+}
+
+// 3. Register your custom memory provider
+registerMemory('postgres', PostgresMemory);
+
+// 4. Use it in your configuration
+const office = new OfficeLLM({
+  memory: {
+    type: 'postgres',
+    connectionString: 'postgresql://user:pass@localhost/db',
+    tableName: 'conversations',
+  },
+  // ... rest of config
+});
+```
+
+## Best Practices
+
+### 1. Always Close Connections
+
+```typescript
+try {
+  const result = await office.executeTask(task);
+  // ... process result
+} finally {
+  await office.close(); // Ensures memory connections are closed
+}
+```
+
+### 2. Handle Memory Errors Gracefully
+
+Memory operations are wrapped in try-catch blocks internally, so your application won't crash if memory storage fails. However, you should monitor logs for memory-related errors.
+
+```typescript
+// Memory failures are logged but don't stop execution
+const result = await office.executeTask(task); // Works even if memory fails
+```
+
+### 3. Use TTL for Redis
+
+Set a TTL (time-to-live) for Redis conversations to prevent unbounded growth:
+
+```typescript
+memory: {
+  type: 'redis',
+  // ... other config
+  ttl: 86400 * 7, // 7 days
+}
+```
+
+### 4. Implement Pagination
+
+When querying large datasets, always use pagination:
+
+```typescript
+const pageSize = 50;
+let offset = 0;
+let conversations: StoredConversation[] = [];
+
+while (true) {
+  const batch = await memory.queryConversations({
+    limit: pageSize,
+    offset: offset,
+  });
+  
+  if (batch.length === 0) break;
+  
+  conversations.push(...batch);
+  offset += pageSize;
+}
+```
+
+### 5. Monitor Memory Usage
+
+For in-memory storage, be mindful of memory limits:
+
+```typescript
+memory: {
+  type: 'in-memory',
+  maxConversations: 100, // Adjust based on your needs
+}
+
+// Periodically check and clear if needed
+const stats = await memory.getStats();
+if (stats.totalConversations > 80) {
+  // Consider clearing old conversations
+}
+```
+
+## Example: Complete Usage
+
+```typescript
+import { OfficeLLM, z } from 'officellm';
+
+async function main() {
+  const office = new OfficeLLM({
+    memory: {
+      type: 'redis',
+      host: 'localhost',
+      port: 6379,
+      ttl: 86400,
+    },
+    manager: {
+      name: 'Task Manager',
+      description: 'Coordinates tasks',
+      provider: {
+        type: 'openai',
+        apiKey: process.env.OPENAI_API_KEY,
+        model: 'gpt-4',
+      },
+      systemPrompt: 'You are a task coordinator.',
+    },
+    workers: [
+      {
+        name: 'assistant',
+        provider: {
+          type: 'openai',
+          apiKey: process.env.OPENAI_API_KEY,
+          model: 'gpt-3.5-turbo',
+        },
+        systemPrompt: 'You are a helpful assistant.',
+        tools: [
+          {
+            name: 'search',
+            description: 'Search for information',
+            parameters: z.object({
+              query: z.string(),
+            }),
+          },
+        ],
+        toolImplementations: {
+          search: async (args) => {
+            return `Search results for: ${args.query}`;
+          },
+        },
+      },
+    ],
+  });
+
+  try {
+    // Execute task
+    const result = await office.executeTask({
+      title: 'Research AI trends',
+      description: 'Find recent developments in AI',
+    });
+
+    console.log('Result:', result.content);
+
+    // Query stored conversations
+    const memory = office.getMemory();
+    if (memory) {
+      const conversations = await memory.queryConversations({
+        agentType: 'worker',
+        agentName: 'assistant',
+      });
+      
+      console.log(`Stored ${conversations.length} assistant conversations`);
+      
+      // Get statistics
+      const stats = await memory.getStats();
+      console.log('Memory stats:', stats);
+    }
+  } finally {
+    // Always close connections
+    await office.close();
+  }
+}
+
+main().catch(console.error);
+```
+
+## Troubleshooting
+
+### Redis Connection Errors
+
+```
+Error: Failed to initialize Redis client
+```
+
+**Solutions:**
+1. Ensure Redis is running: `docker run -p 6379:6379 redis`
+2. Install redis package: `npm install redis`
+3. Check connection details (host, port, password)
+4. Verify firewall settings
+
+### Memory Not Storing Conversations
+
+If conversations aren't being stored:
+1. Check that memory is configured in OfficeLLMConfig
+2. Verify the memory instance is accessible: `office.getMemory()`
+3. Check application logs for memory-related errors
+4. Ensure proper cleanup with `await office.close()`
+
+### Performance Issues
+
+For large conversation histories:
+1. Use Redis instead of in-memory storage
+2. Implement pagination when querying
+3. Set appropriate TTL values
+4. Consider archiving old conversations
+5. Use specific queries instead of fetching all conversations
+

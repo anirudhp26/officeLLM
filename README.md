@@ -8,6 +8,7 @@ A powerful TypeScript framework for building multi-agent AI systems with continu
 - **Continuous Execution**: Agents autonomously work until task completion
 - **User-Defined Tools**: Bring your own tool implementations
 - **Multiple LLM Providers**: OpenAI, Anthropic, Google Gemini, OpenRouter
+- **Memory System**: Store and retrieve conversation history with In-Memory or Redis storage
 - **Type-Safe**: Full TypeScript support with Zod schemas
 - **Flexible**: Easy to extend and customize
 
@@ -92,6 +93,61 @@ const dataWorker = {
 };
 ```
 
+## Memory System
+
+OfficeLLM includes an extensible memory system to store conversation history:
+
+### In-Memory Storage
+
+```typescript
+const office = new OfficeLLM({
+  memory: {
+    type: 'in-memory',
+    maxConversations: 1000, // Optional limit
+  },
+  // ... rest of config
+});
+```
+
+### Redis Storage
+
+```typescript
+const office = new OfficeLLM({
+  memory: {
+    type: 'redis',
+    host: 'localhost',
+    port: 6379,
+    password: 'secret', // Optional
+    ttl: 86400, // 24 hours
+  },
+  // ... rest of config
+});
+```
+
+### Querying Memory
+
+```typescript
+const memory = office.getMemory();
+
+// Get all conversations
+const conversations = await memory.queryConversations();
+
+// Filter by agent type
+const managerConvs = await memory.queryConversations({ 
+  agentType: 'manager' 
+});
+
+// Get statistics
+const stats = await memory.getStats();
+
+// Always close when done
+await office.close();
+```
+
+### Custom Memory Providers
+
+Easily add new storage backends (PostgreSQL, MongoDB, etc.) by extending `BaseMemory` and using `registerMemory()`. See documentation for details.
+
 ## Configuration
 
 ### Manager Configuration
@@ -170,6 +226,7 @@ IMPORTANT: Signal completion by responding without tool calls`
 See the `examples/` directory for complete examples:
 
 - `real-world-demo.ts` - Real world example
+- `memory-demo.ts` - Memory system usage examples
 
 ## Safety Features
 

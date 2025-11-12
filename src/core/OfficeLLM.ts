@@ -2,6 +2,8 @@ import z from 'zod';
 import { createProvider, IProvider, ProviderMessage } from '../providers';
 import { OfficeLLMConfig, ManagerConfig, WorkerConfig, Task, TaskResult, ToolImplementation } from '../types';
 import { logger } from '../utils/logger';
+import { createMemory, IMemory, StoredConversation } from '../memory';
+import { randomUUID } from 'crypto';
 
 /**
  * OfficeLLM - Multi-Agent AI Framework with Continuous Execution
@@ -36,13 +38,20 @@ import { logger } from '../utils/logger';
 export class OfficeLLM {
   private manager: ManagerAgent;
   private workers: Map<string, WorkerAgent> = new Map();
+  private memory?: IMemory;
 
   constructor(config: OfficeLLMConfig) {
-    this.manager = new ManagerAgent(config.manager);
+    // Initialize memory if provided
+    if (config.memory) {
+      this.memory = createMemory(config.memory);
+      logger.info('OFFICELLM', `Memory initialized: ${config.memory.type}`);
+    }
+
+    this.manager = new ManagerAgent(config.manager, this.memory);
 
     // Register workers
     for (const workerConfig of config.workers) {
-      const worker = new WorkerAgent(workerConfig);
+      const worker = new WorkerAgent(workerConfig, this.memory);
       this.workers.set(workerConfig.name, worker);
     }
   }
@@ -82,6 +91,23 @@ export class OfficeLLM {
       description: this.manager.config.description,
     };
   }
+
+  /**
+   * Get memory instance
+   */
+  getMemory(): IMemory | undefined {
+    return this.memory;
+  }
+
+  /**
+   * Close memory connection and cleanup
+   */
+  async close(): Promise<void> {
+    if (this.memory) {
+      await this.memory.close();
+      logger.info('OFFICELLM', 'Memory connection closed');
+    }
+  }
 }
 
 /**
@@ -92,15 +118,20 @@ class ManagerAgent {
   private provider: IProvider;
   private maxIterations: number;
   private contextWindow: number;
+  private memory?: IMemory;
 
-  constructor(config: ManagerConfig) {
+  constructor(config: ManagerConfig, memory?: IMemory) {
     this.config = config;
     this.provider = createProvider(config.provider);
     this.maxIterations = config.maxIterations || 20;
     this.contextWindow = config.contextWindow || 10; // 10 messages
+    this.memory = memory;
   }
 
   async executeTask(task: Task, workers: Map<string, WorkerAgent>): Promise<TaskResult> {
+    // Generate a unique conversation ID for this task
+    const conversationId = randomUUID();
+    
     const messages: ProviderMessage[] = [
       {
         role: 'system',
@@ -142,6 +173,12 @@ class ManagerAgent {
         // If no tool calls, the manager has finished
         if (!response.toolCalls || response.toolCalls.length === 0) {
           logger.info('MANAGER', 'Task completed - no more tool calls needed');
+          
+          // Store conversation in memory if available
+          if (this.memory) {
+            await this.storeConversation(conversationId, messages);
+          }
+          
           return {
             success: true,
             content: response.content,
@@ -200,6 +237,12 @@ class ManagerAgent {
 
       // Max iterations reached
       logger.warn('MANAGER', `Maximum iterations (${this.maxIterations}) reached`);
+      
+      // Store conversation in memory if available
+      if (this.memory) {
+        await this.storeConversation(conversationId, messages);
+      }
+      
       return {
         success: true,
         content: 'Task execution stopped: Maximum iterations reached. Partial results may be available.',
@@ -208,12 +251,46 @@ class ManagerAgent {
 
     } catch (error) {
       logger.error('MANAGER', 'Execution failed', error);
+      
+      // Store conversation in memory even on error if available
+      if (this.memory) {
+        await this.storeConversation(conversationId, messages);
+      }
+      
       return {
         success: false,
         content: '',
         error: error instanceof Error ? error.message : 'Unknown error',
         usage: totalUsage,
       };
+    }
+  }
+
+  /**
+   * Store conversation in memory
+   */
+  private async storeConversation(conversationId: string, messages: ProviderMessage[]): Promise<void> {
+    if (!this.memory) return;
+
+    try {
+      const conversation: StoredConversation = {
+        id: conversationId,
+        agentType: 'manager',
+        agentName: this.config.name,
+        messages: messages,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        metadata: {
+          maxIterations: this.maxIterations,
+          provider: this.config.provider.type,
+          model: this.config.provider.model,
+        },
+      };
+
+      await this.memory.storeConversation(conversation);
+      logger.debug('MANAGER', `Conversation ${conversationId} stored in memory`);
+    } catch (error) {
+      logger.error('MANAGER', 'Failed to store conversation in memory', error);
     }
   }
 }
@@ -228,18 +305,24 @@ class WorkerAgent {
   private messages: ProviderMessage[] = [];
   private maxIterations: number;
   private contextWindow: number;
-  constructor(config: WorkerConfig) {
+  private memory?: IMemory;
+  
+  constructor(config: WorkerConfig, memory?: IMemory) {
     this.config = config;
     this.provider = createProvider(config.provider);
     this.toolImplementations = config.toolImplementations || {};
     this.maxIterations = config.maxIterations || 25;
     this.contextWindow = config.contextWindow || 10;
+    this.memory = memory;
   }
 
   /**
    * Execute worker with given parameters
    */
   async execute(params: Record<string, any>): Promise<TaskResult> {
+    // Generate a unique conversation ID for this worker execution
+    const conversationId = randomUUID();
+    
     this.messages.push(
       {
         role: 'system',
@@ -276,6 +359,12 @@ class WorkerAgent {
         // If no tool calls, the worker has finished
         if (!response.toolCalls || response.toolCalls.length === 0) {
           logger.info(`WORKER:${this.config.name}`, 'Completed - no more tool calls needed');
+          
+          // Store conversation in memory if available
+          if (this.memory) {
+            await this.storeConversation(conversationId, this.messages);
+          }
+          
           return {
             success: true,
             content: response.content,
@@ -314,6 +403,12 @@ class WorkerAgent {
       
       // Max iterations reached
       logger.warn(`WORKER:${this.config.name}`, `Maximum iterations (${this.maxIterations}) reached`);
+      
+      // Store conversation in memory if available
+      if (this.memory) {
+        await this.storeConversation(conversationId, this.messages);
+      }
+      
       return {
         success: true,
         content: 'Worker execution stopped: Maximum iterations reached. Partial results may be available.',
@@ -322,12 +417,47 @@ class WorkerAgent {
 
     } catch (error) {
       logger.error(`WORKER:${this.config.name}`, 'Execution failed', error);
+      
+      // Store conversation in memory even on error if available
+      if (this.memory) {
+        await this.storeConversation(conversationId, this.messages);
+      }
+      
       return {
         success: false,
         content: '',
         error: error instanceof Error ? error.message : 'Unknown error',
         usage: totalUsage,
       };
+    }
+  }
+
+  /**
+   * Store conversation in memory
+   */
+  private async storeConversation(conversationId: string, messages: ProviderMessage[]): Promise<void> {
+    if (!this.memory) return;
+
+    try {
+      const conversation: StoredConversation = {
+        id: conversationId,
+        agentType: 'worker',
+        agentName: this.config.name,
+        messages: messages,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        metadata: {
+          maxIterations: this.maxIterations,
+          provider: this.config.provider.type,
+          model: this.config.provider.model,
+          tools: this.config.tools?.map(t => t.name),
+        },
+      };
+
+      await this.memory.storeConversation(conversation);
+      logger.debug(`WORKER:${this.config.name}`, `Conversation ${conversationId} stored in memory`);
+    } catch (error) {
+      logger.error(`WORKER:${this.config.name}`, 'Failed to store conversation in memory', error);
     }
   }
 

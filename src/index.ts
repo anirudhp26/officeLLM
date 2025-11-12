@@ -25,6 +25,26 @@ export {
   ProviderConfig,
 } from './providers/ProviderFactory';
 
+// Memory system
+export {
+  BaseMemory,
+  IMemory,
+  BaseMemoryConfig,
+  MemoryType,
+  StoredConversation,
+  QueryOptions,
+} from './memory/BaseMemory';
+
+export { InMemoryStorage, InMemoryConfig } from './memory/InMemoryStorage';
+export { RedisMemory, RedisConfig } from './memory/RedisMemory';
+
+export {
+  MemoryFactory,
+  createMemory,
+  registerMemory,
+  MemoryConfig,
+} from './memory/MemoryFactory';
+
 // Types
 export {
   OfficeLLMConfig,
