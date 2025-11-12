@@ -144,7 +144,7 @@ class ManagerAgent {
     ];
 
     // Create tool definitions for available workers
-    const workerTools = Array.from(workers.entries()).map(([name, worker]) => ({
+    const workerTools = Array.from(workers.entries()).filter(([name]) => !this.config.restrictedWorkers || !this.config.restrictedWorkers.includes(name)).map(([name, worker]) => ({
       name,
       description: worker.config.description || `${name} agent`,
       parameters: worker.getToolSchema(),
@@ -197,7 +197,7 @@ class ManagerAgent {
         for (const toolCall of response.toolCalls) {
           const worker = workers.get(toolCall.function.name);
           
-          if (worker) {
+          if (worker && (!this.config.restrictedWorkers || this.config.restrictedWorkers.includes(toolCall.function.name))) {
             logger.info('MANAGER', `Executing worker: ${toolCall.function.name}`);
             const workerParams = JSON.parse(toolCall.function.arguments);
             logger.debug('MANAGER', `Worker parameters: ${JSON.stringify(workerParams)}`);
@@ -223,10 +223,10 @@ class ManagerAgent {
             });
           } else {
             // Worker not found - add error message
-            logger.error('MANAGER', `Worker not found: ${toolCall.function.name}`);
+            logger.error('MANAGER', `Worker not found or restricted: ${toolCall.function.name}`);
           messages.push({
             role: 'tool',
-              content: `Error: Worker '${toolCall.function.name}' not found`,
+              content: `Error: Worker '${toolCall.function.name}' not found or restricted`,
             toolCallId: toolCall.id,
           });
           }

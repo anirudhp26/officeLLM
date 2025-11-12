@@ -112,10 +112,7 @@ export interface ManagerConfig {
   systemPrompt: string;
   maxIterations?: number;
   contextWindow?: number;
-  /**
-   * @deprecated - tools are no longer supported (workers are served as tools to the manager)
-   */
-  // tools?: ToolDefinition[];
+  restrictedWorkers?: string[];
 }
 
 export interface ToolImplementation {
