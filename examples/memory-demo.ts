@@ -13,6 +13,7 @@ async function demonstrateInMemoryStorage() {
   const office = new OfficeLLM({
     // Configure in-memory storage
     memory: {
+      instanceId: '123',
       type: 'in-memory',
       maxConversations: 100, // Optional: limit stored conversations
     },
@@ -109,7 +110,6 @@ async function demonstrateInMemoryStorage() {
     if (allConversations.length > 0) {
       const firstConv = allConversations[0];
       console.log(`\nFirst Conversation (${firstConv.agentName}):`);
-      console.log(`  - ID: ${firstConv.id}`);
       console.log(`  - Messages: ${firstConv.messages.length}`);
       console.log(`  - Created: ${firstConv.createdAt.toISOString()}`);
       console.log(`  - Updated: ${firstConv.updatedAt.toISOString()}`);
@@ -132,6 +132,7 @@ async function demonstrateRedisStorage() {
     const office = new OfficeLLM({
       // Configure Redis storage
       memory: {
+        instanceId: '123',
         type: 'redis',
         host: 'localhost',
         port: 6379,

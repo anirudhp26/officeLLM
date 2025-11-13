@@ -77,6 +77,10 @@ Always provide clear instructions and coordinate between workers when needed.`,
 const office = new OfficeLLM({
   manager,
   workers: [mathWorker],
+  memory: {
+    instanceId: '123',
+    type: 'in-memory'
+  }
 });
 
 // Execute a task

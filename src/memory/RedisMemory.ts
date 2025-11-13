@@ -1,6 +1,7 @@
-import { BaseMemory, BaseMemoryConfig, StoredConversation, QueryOptions } from './BaseMemory';
+import { BaseMemory, BaseMemoryConfig, StoredConversation, QueryOptions, IMemory } from './BaseMemory';
 import { ProviderMessage } from '../providers';
 import { createClient } from 'redis';
+import { logger } from '../utils/logger';
 
 /**
  * Configuration for Redis memory
@@ -26,13 +27,19 @@ export class RedisMemory extends BaseMemory {
   private ttl?: number;
   private isConnected: boolean = false;
   private tls?: boolean;
+  private instanceId: string;
 
   constructor(config: RedisConfig) {
     super(config);
     this.keyPrefix = config.keyPrefix || 'officellm:conv:';
     this.ttl = config.ttl;
     this.tls = config.tls;
+    this.instanceId = config.instanceId;
     this.initializeRedis(config);
+  }
+
+  getMemoryInstance(): IMemory {
+    return this;
   }
 
   /**
@@ -41,16 +48,18 @@ export class RedisMemory extends BaseMemory {
   private async initializeRedis(config: RedisConfig): Promise<void> {
     try {
       // Build the Redis URL with optional password
+      // Format: redis[s]://[[username][:password]@][host][:port][/db-number]
       let url = this.tls ? 'rediss://' : 'redis://';
       if (config.password) {
-        url += `:${config.password}@`;
+        // Redis uses default username if not specified
+        url += `default:${config.password}@`;
       }
       url += `${config.host}:${config.port}`;
-      if (config.db) {
+      if (config.db !== undefined) {
         url += `/${config.db}`;
       }
 
-      console.log('Redis URL', url);
+      logger.debug('REDIS', `Connecting to Redis at ${config.host}:${config.port}`);
       
       this.client = createClient({
         url: url,
@@ -88,7 +97,7 @@ export class RedisMemory extends BaseMemory {
   async storeConversation(conversation: StoredConversation): Promise<void> {
     this.ensureConnected();
     
-    const key = this.getConversationKey(conversation.id);
+    const key = this.getConversationKey();
     const value = JSON.stringify({
       ...conversation,
       createdAt: conversation.createdAt.toISOString(),
@@ -105,10 +114,10 @@ export class RedisMemory extends BaseMemory {
     await this.addToIndex(conversation);
   }
 
-  async getConversation(id: string): Promise<StoredConversation | null> {
+  async getConversation(): Promise<StoredConversation | null> {
     this.ensureConnected();
     
-    const key = this.getConversationKey(id);
+    const key = this.getConversationKey();
     const value = await this.client.get(key);
 
     if (!value) {
@@ -123,12 +132,33 @@ export class RedisMemory extends BaseMemory {
     };
   }
 
-  async updateConversation(id: string, messages: ProviderMessage[]): Promise<void> {
+  /**
+   * Get a conversation by a specific ID (used internally for querying)
+   */
+  private async getConversationById(id: string): Promise<StoredConversation | null> {
     this.ensureConnected();
     
-    const conversation = await this.getConversation(id);
+    const key = `${this.keyPrefix}${id}`;
+    const value = await this.client.get(key);
+
+    if (!value) {
+      return null;
+    }
+
+    const parsed = JSON.parse(value);
+    return {
+      ...parsed,
+      createdAt: new Date(parsed.createdAt),
+      updatedAt: new Date(parsed.updatedAt),
+    };
+  }
+
+  async updateConversation(messages: ProviderMessage[]): Promise<void> {
+    this.ensureConnected();
+    
+    const conversation = await this.getConversation();
     if (!conversation) {
-      throw new Error(`Conversation with id ${id} not found`);
+      throw new Error(`Conversation with instanceId ${this.instanceId} not found`);
     }
 
     conversation.messages = messages;
@@ -137,15 +167,15 @@ export class RedisMemory extends BaseMemory {
     await this.storeConversation(conversation);
   }
 
-  async deleteConversation(id: string): Promise<void> {
+  async deleteConversation(): Promise<void> {
     this.ensureConnected();
     
-    const conversation = await this.getConversation(id);
+    const conversation = await this.getConversation();
     if (conversation) {
       await this.removeFromIndex(conversation);
     }
 
-    const key = this.getConversationKey(id);
+    const key = this.getConversationKey();
     await this.client.del(key);
   }
 
@@ -177,7 +207,7 @@ export class RedisMemory extends BaseMemory {
     // Fetch all conversations
     const conversations: StoredConversation[] = [];
     for (const id of conversationIds) {
-      const conv = await this.getConversation(id);
+      const conv = await this.getConversationById(id);
       if (conv) {
         conversations.push(conv);
       }
@@ -266,8 +296,8 @@ export class RedisMemory extends BaseMemory {
   /**
    * Get Redis key for a conversation
    */
-  private getConversationKey(id: string): string {
-    return `${this.keyPrefix}${id}`;
+  private getConversationKey(): string {
+    return `${this.keyPrefix}${this.instanceId}`;
   }
 
   /**
@@ -282,7 +312,7 @@ export class RedisMemory extends BaseMemory {
    */
   private async addToIndex(conversation: StoredConversation): Promise<void> {
     const indexKey = this.getIndexKey(conversation.agentType, conversation.agentName);
-    await this.client.sAdd(indexKey, conversation.id);
+    await this.client.sAdd(indexKey, this.instanceId);
   }
 
   /**
@@ -290,7 +320,7 @@ export class RedisMemory extends BaseMemory {
    */
   private async removeFromIndex(conversation: StoredConversation): Promise<void> {
     const indexKey = this.getIndexKey(conversation.agentType, conversation.agentName);
-    await this.client.sRem(indexKey, conversation.id);
+    await this.client.sRem(indexKey, this.instanceId);
   }
 }
 

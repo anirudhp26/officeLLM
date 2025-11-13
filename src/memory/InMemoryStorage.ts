@@ -1,4 +1,4 @@
-import { BaseMemory, BaseMemoryConfig, StoredConversation, QueryOptions } from './BaseMemory';
+import { BaseMemory, BaseMemoryConfig, StoredConversation, QueryOptions, IMemory } from './BaseMemory';
 import { ProviderMessage } from '../providers';
 
 /**
@@ -16,10 +16,16 @@ export interface InMemoryConfig extends BaseMemoryConfig {
 export class InMemoryStorage extends BaseMemory {
   private conversations: Map<string, StoredConversation> = new Map();
   private maxConversations: number;
+  private instanceId: string;
 
   constructor(config: InMemoryConfig) {
     super(config);
     this.maxConversations = config.maxConversations || 1000;
+    this.instanceId = config.instanceId;
+  }
+
+  getMemoryInstance(): IMemory {
+    return this;
   }
 
   async storeConversation(conversation: StoredConversation): Promise<void> {
@@ -31,30 +37,30 @@ export class InMemoryStorage extends BaseMemory {
       }
     }
 
-    this.conversations.set(conversation.id, {
+    this.conversations.set(this.instanceId, {
       ...conversation,
       createdAt: new Date(conversation.createdAt),
       updatedAt: new Date(conversation.updatedAt),
     });
   }
 
-  async getConversation(id: string): Promise<StoredConversation | null> {
-    const conversation = this.conversations.get(id);
+  async getConversation(): Promise<StoredConversation | null> {
+    const conversation = this.conversations.get(this.instanceId);
     return conversation ? { ...conversation } : null;
   }
 
-  async updateConversation(id: string, messages: ProviderMessage[]): Promise<void> {
-    const conversation = this.conversations.get(id);
+  async updateConversation(messages: ProviderMessage[]): Promise<void> {
+    const conversation = this.conversations.get(this.instanceId);
     if (!conversation) {
-      throw new Error(`Conversation with id ${id} not found`);
+      throw new Error(`Conversation with instanceId ${this.instanceId} not found`);
     }
 
     conversation.messages = messages;
     conversation.updatedAt = new Date();
   }
 
-  async deleteConversation(id: string): Promise<void> {
-    this.conversations.delete(id);
+  async deleteConversation(): Promise<void> {
+    this.conversations.delete(this.instanceId);
   }
 
   async queryConversations(options?: QueryOptions): Promise<StoredConversation[]> {

@@ -2,7 +2,7 @@ import z from 'zod';
 import { createProvider, IProvider, ProviderMessage } from '../providers';
 import { OfficeLLMConfig, ManagerConfig, WorkerConfig, Task, TaskResult, ToolImplementation } from '../types';
 import { logger } from '../utils/logger';
-import { createMemory, IMemory, StoredConversation } from '../memory';
+import { createMemory, IMemory, InMemoryStorage, StoredConversation } from '../memory';
 import { randomUUID } from 'crypto';
 
 /**
@@ -14,9 +14,20 @@ import { randomUUID } from 'crypto';
  * - Execution continues until agents signal completion (by not calling more tools)
  * - Users provide tool implementations for maximum flexibility
  * 
+ * ## Memory Design
+ * 
+ * The framework stores conversations in memory keyed by instanceId:
+ * - Each OfficeLLM instance has one instanceId (auto-generated or provided)
+ * - Workers maintain message history across multiple task executions (with context window limiting)
+ * - Memory storage captures conversation snapshots that can be queried later
+ * - Conversations are stored per agent (manager or worker) at task completion
+ * 
+ * For separate conversation threads, create multiple OfficeLLM instances with different instanceIds.
+ * 
  * @example
  * ```typescript
  * const office = new OfficeLLM({
+ *   memory: { instanceId: 'session-123', type: 'in-memory' },
  *   manager: { ... },
  *   workers: [
  *     {
@@ -38,20 +49,32 @@ import { randomUUID } from 'crypto';
 export class OfficeLLM {
   private manager: ManagerAgent;
   private workers: Map<string, WorkerAgent> = new Map();
-  private memory?: IMemory;
+  private memory: IMemory;
+  private instanceId: string;
 
   constructor(config: OfficeLLMConfig) {
+    if (!config.memory?.instanceId) {
+      this.instanceId = randomUUID();
+    } else {
+      this.instanceId = config.memory.instanceId;
+    }
     // Initialize memory if provided
     if (config.memory) {
       this.memory = createMemory(config.memory);
       logger.info('OFFICELLM', `Memory initialized: ${config.memory.type}`);
+    } else {
+      this.memory = new InMemoryStorage({
+        instanceId: this.instanceId,
+        type: 'in-memory',
+      });
+      logger.warn('OFFICELLM', `Memory instance ID not provided, using default: ${this.instanceId}`);
     }
 
-    this.manager = new ManagerAgent(config.manager, this.memory);
+    this.manager = new ManagerAgent(config.manager, this.instanceId, this.memory);
 
     // Register workers
     for (const workerConfig of config.workers) {
-      const worker = new WorkerAgent(workerConfig, this.memory);
+      const worker = new WorkerAgent(workerConfig, this.instanceId, this.memory);
       this.workers.set(workerConfig.name, worker);
     }
   }
@@ -95,8 +118,38 @@ export class OfficeLLM {
   /**
    * Get memory instance
    */
-  getMemory(): IMemory | undefined {
+  getMemory(): IMemory {
     return this.memory;
+  }
+
+  /**
+   * Get the instance ID
+   */
+  getInstanceId(): string {
+    return this.instanceId;
+  }
+
+  /**
+   * Reset conversation history for a specific worker
+   * This clears the worker's message history, allowing it to start fresh
+   */
+  resetWorkerHistory(workerName: string): void {
+    const worker = this.workers.get(workerName);
+    if (!worker) {
+      throw new Error(`Worker '${workerName}' not found`);
+    }
+    worker.resetHistory();
+    logger.info('OFFICELLM', `Reset conversation history for worker: ${workerName}`);
+  }
+
+  /**
+   * Reset conversation history for all workers
+   */
+  resetAllWorkerHistory(): void {
+    for (const [name, worker] of this.workers.entries()) {
+      worker.resetHistory();
+      logger.info('OFFICELLM', `Reset conversation history for worker: ${name}`);
+    }
   }
 
   /**
@@ -118,20 +171,19 @@ class ManagerAgent {
   private provider: IProvider;
   private maxIterations: number;
   private contextWindow: number;
-  private memory?: IMemory;
+  private memory: IMemory;
+  private instanceId: string;
 
-  constructor(config: ManagerConfig, memory?: IMemory) {
+  constructor(config: ManagerConfig, instanceId: string, memory: IMemory) {
     this.config = config;
     this.provider = createProvider(config.provider);
     this.maxIterations = config.maxIterations || 20;
     this.contextWindow = config.contextWindow || 10; // 10 messages
+    this.instanceId = instanceId;
     this.memory = memory;
   }
 
   async executeTask(task: Task, workers: Map<string, WorkerAgent>): Promise<TaskResult> {
-    // Generate a unique conversation ID for this task
-    const conversationId = randomUUID();
-    
     const messages: ProviderMessage[] = [
       {
         role: 'system',
@@ -160,7 +212,10 @@ class ManagerAgent {
         iteration++;
         logger.info('MANAGER', `Iteration ${iteration}/${this.maxIterations}`);
 
-      const response = await this.provider.chat(messages, workerTools);
+        // Apply context window limiting before making the API call
+        const messagesToSend = this.applyContextWindow(messages);
+
+        const response = await this.provider.chat(messagesToSend, workerTools);
 
         // Accumulate usage
         if (response.usage) {
@@ -178,7 +233,7 @@ class ManagerAgent {
           
           // Store conversation in memory if available
           if (this.memory) {
-            await this.storeConversation(conversationId, messages);
+            await this.storeConversation(messages);
           }
           
           return {
@@ -242,7 +297,7 @@ class ManagerAgent {
       
       // Store conversation in memory if available
       if (this.memory) {
-        await this.storeConversation(conversationId, messages);
+        await this.storeConversation(messages);
       }
       
       return {
@@ -256,7 +311,7 @@ class ManagerAgent {
       
       // Store conversation in memory even on error if available
       if (this.memory) {
-        await this.storeConversation(conversationId, messages);
+        await this.storeConversation(messages);
       }
       
       return {
@@ -269,14 +324,32 @@ class ManagerAgent {
   }
 
   /**
+   * Apply context window limiting to prevent unbounded message growth
+   * Keeps system message and the most recent N messages
+   */
+  private applyContextWindow(messages: ProviderMessage[]): ProviderMessage[] {
+    if (messages.length <= this.contextWindow) {
+      return messages;
+    }
+
+    // Always keep the system message (first message)
+    const systemMessage = messages[0];
+    
+    // Get the most recent messages within the context window
+    // We subtract 1 to account for the system message
+    const recentMessages = messages.slice(-(this.contextWindow - 1));
+    
+    return [systemMessage, ...recentMessages];
+  }
+
+  /**
    * Store conversation in memory
    */
-  private async storeConversation(conversationId: string, messages: ProviderMessage[]): Promise<void> {
+  private async storeConversation(messages: ProviderMessage[]): Promise<void> {
     if (!this.memory) return;
 
     try {
       const conversation: StoredConversation = {
-        id: conversationId,
         agentType: 'manager',
         agentName: this.config.name,
         messages: messages,
@@ -290,7 +363,7 @@ class ManagerAgent {
       };
 
       await this.memory.storeConversation(conversation);
-      logger.debug('MANAGER', `Conversation ${conversationId} stored in memory`);
+      logger.debug('MANAGER', `Conversation stored in memory`);
     } catch (error) {
       logger.error('MANAGER', 'Failed to store conversation in memory', error);
     }
@@ -307,36 +380,36 @@ class WorkerAgent {
   private messages: ProviderMessage[] = [];
   private maxIterations: number;
   private contextWindow: number;
-  private memory?: IMemory;
-  
-  constructor(config: WorkerConfig, memory?: IMemory) {
+  private memory: IMemory;
+  private instanceId: string;
+
+  constructor(config: WorkerConfig, instanceId: string, memory: IMemory) {
     this.config = config;
     this.provider = createProvider(config.provider);
     this.toolImplementations = config.toolImplementations || {};
     this.maxIterations = config.maxIterations || 25;
     this.contextWindow = config.contextWindow || 10;
     this.memory = memory;
+    this.instanceId = instanceId;
+    
+    // Initialize with system prompt
+    this.messages.push({
+      role: 'system',
+      content: this.config.systemPrompt,
+    });
   }
 
   /**
    * Execute worker with given parameters
    */
   async execute(params: Record<string, any>): Promise<TaskResult> {
-    // Generate a unique conversation ID for this worker execution
-    const conversationId = randomUUID();
-    
-    this.messages.push(
-      {
-        role: 'system',
-        content: this.config.systemPrompt,
-      },
-      {
-        role: 'user',
-        content: Object.entries(params)
-          .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
-          .join('\n'),
-      }
-    );
+    // Add user message with task parameters
+    this.messages.push({
+      role: 'user',
+      content: Object.entries(params)
+        .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+        .join('\n'),
+    });
 
     let iteration = 0;
     let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -346,7 +419,10 @@ class WorkerAgent {
         iteration++;
         logger.info(`WORKER:${this.config.name}`, `Iteration ${iteration}/${this.maxIterations}`);
 
-      const response = await this.provider.chat(this.messages, this.config.tools);
+        // Apply context window limiting before making the API call
+        const messagesToSend = this.applyContextWindow();
+
+        const response = await this.provider.chat(messagesToSend, this.config.tools);
 
         // Accumulate usage
         if (response.usage) {
@@ -362,9 +438,15 @@ class WorkerAgent {
         if (!response.toolCalls || response.toolCalls.length === 0) {
           logger.info(`WORKER:${this.config.name}`, 'Completed - no more tool calls needed');
           
+          // Add final assistant message
+          this.messages.push({
+            role: 'assistant',
+            content: response.content,
+          });
+          
           // Store conversation in memory if available
           if (this.memory) {
-            await this.storeConversation(conversationId, this.messages);
+            await this.storeConversation(this.messages);
           }
           
           return {
@@ -408,7 +490,7 @@ class WorkerAgent {
       
       // Store conversation in memory if available
       if (this.memory) {
-        await this.storeConversation(conversationId, this.messages);
+        await this.storeConversation(this.messages);
       }
       
       return {
@@ -422,7 +504,7 @@ class WorkerAgent {
       
       // Store conversation in memory even on error if available
       if (this.memory) {
-        await this.storeConversation(conversationId, this.messages);
+        await this.storeConversation(this.messages);
       }
       
       return {
@@ -435,14 +517,32 @@ class WorkerAgent {
   }
 
   /**
+   * Apply context window limiting to prevent unbounded message growth
+   * Keeps system message and the most recent N messages
+   */
+  private applyContextWindow(): ProviderMessage[] {
+    if (this.messages.length <= this.contextWindow) {
+      return this.messages;
+    }
+
+    // Always keep the system message (first message)
+    const systemMessage = this.messages[0];
+    
+    // Get the most recent messages within the context window
+    // We subtract 1 to account for the system message
+    const recentMessages = this.messages.slice(-(this.contextWindow - 1));
+    
+    return [systemMessage, ...recentMessages];
+  }
+
+  /**
    * Store conversation in memory
    */
-  private async storeConversation(conversationId: string, messages: ProviderMessage[]): Promise<void> {
+  private async storeConversation(messages: ProviderMessage[]): Promise<void> {
     if (!this.memory) return;
 
     try {
       const conversation: StoredConversation = {
-        id: conversationId,
         agentType: 'worker',
         agentName: this.config.name,
         messages: messages,
@@ -457,7 +557,7 @@ class WorkerAgent {
       };
 
       await this.memory.storeConversation(conversation);
-      logger.debug(`WORKER:${this.config.name}`, `Conversation ${conversationId} stored in memory`);
+      logger.debug(`WORKER:${this.config.name}`, `Conversation stored in memory`);
     } catch (error) {
       logger.error(`WORKER:${this.config.name}`, 'Failed to store conversation in memory', error);
     }
@@ -483,11 +583,27 @@ class WorkerAgent {
   }
 
   /**
+   * Reset conversation history for this worker
+   * Keeps only the system prompt
+   */
+  resetHistory(): void {
+    this.messages = [{
+      role: 'system',
+      content: this.config.systemPrompt,
+    }];
+    logger.info(`WORKER:${this.config.name}`, 'Conversation history reset');
+  }
+
+  /**
    * Get the tool schema for this worker (used by manager)
+   * 
+   * This defines the parameters that the manager should provide when calling this worker.
+   * Workers receive these parameters as key-value pairs in the execute() method.
+   * 
+   * The default schema provides a flexible structure for passing task information.
+   * In the future, this could be made configurable per worker for more specific parameter definitions.
    */
   getToolSchema() {
-    // Create a simple schema from worker parameters
-    // In a real implementation, this would be more sophisticated
     return z.object({
       task: z.string().describe('The task to perform, in detail'),
       context: z.string().describe('The context of the task'),

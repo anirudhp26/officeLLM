@@ -9,6 +9,13 @@ export type MemoryType = 'in-memory' | 'redis' | string;
  * Base configuration for all memory providers
  */
 export interface BaseMemoryConfig {
+  /**
+   * The instance ID of the memory provider (unique to the OfficeLLM instance), will be used to load memory from the database
+   */
+  instanceId: string;
+  /**
+   * The type of memory provider
+   */
   type: MemoryType;
 }
 
@@ -16,7 +23,6 @@ export interface BaseMemoryConfig {
  * Stored conversation with metadata
  */
 export interface StoredConversation {
-  id: string;
   agentType: 'manager' | 'worker';
   agentName: string;
   messages: ProviderMessage[];
@@ -49,17 +55,17 @@ export interface IMemory {
   /**
    * Retrieve a conversation by ID
    */
-  getConversation(id: string): Promise<StoredConversation | null>;
+  getConversation(): Promise<StoredConversation | null>;
 
   /**
    * Update an existing conversation
    */
-  updateConversation(id: string, messages: ProviderMessage[]): Promise<void>;
+  updateConversation(messages: ProviderMessage[]): Promise<void>;
 
   /**
    * Delete a conversation
    */
-  deleteConversation(id: string): Promise<void>;
+  deleteConversation(): Promise<void>;
 
   /**
    * Query conversations with filters
@@ -98,9 +104,9 @@ export abstract class BaseMemory implements IMemory {
   }
 
   abstract storeConversation(conversation: StoredConversation): Promise<void>;
-  abstract getConversation(id: string): Promise<StoredConversation | null>;
-  abstract updateConversation(id: string, messages: ProviderMessage[]): Promise<void>;
-  abstract deleteConversation(id: string): Promise<void>;
+  abstract getConversation(): Promise<StoredConversation | null>;
+  abstract updateConversation(messages: ProviderMessage[]): Promise<void>;
+  abstract deleteConversation(): Promise<void>;
   abstract queryConversations(options?: QueryOptions): Promise<StoredConversation[]>;
   abstract clear(): Promise<void>;
   abstract getStats(): Promise<{
