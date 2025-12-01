@@ -163,6 +163,11 @@ Easily add new storage backends (PostgreSQL, MongoDB, etc.) by extending `BaseMe
     temperature: 0.7,
   },
   systemPrompt: 'Instructions for the manager...',
+  maxIterations: 20, // Optional: Max iterations before stopping (default: 20)
+  contextWindow: 10, // Optional: Number of recent messages to keep (default: 10)
+  tools: [], // Optional: Custom tools for the manager
+  toolImplementations: {}, // Optional: Tool implementations for manager
+  restrictedWorkers: [], // Optional: Worker names to exclude from delegation
 }
 ```
 
@@ -187,6 +192,9 @@ Easily add new storage backends (PostgreSQL, MongoDB, etc.) by extending `BaseMe
       return 'result';
     },
   },
+  maxIterations: 25, // Optional: Max iterations before stopping (default: 25)
+  contextWindow: 10, // Optional: Number of recent messages to keep (default: 10)
+  restrictedTools: [], // Optional: Tool names to exclude from this worker
 }
 ```
 
@@ -228,11 +236,74 @@ See the `examples/` directory for complete examples:
 - `real-world-demo.ts` - Real world example
 - `memory-demo.ts` - Memory system usage examples
 
+## Advanced Features
+
+### Context Window Management
+
+Control memory usage by limiting conversation history:
+
+```typescript
+const worker = {
+  name: 'analyst',
+  contextWindow: 15, // Keep only last 15 messages + system prompt
+  // ... rest of config
+};
+```
+
+The context window automatically maintains the system prompt and keeps only the most recent N messages, preventing unbounded memory growth during long conversations.
+
+### Restricted Tools and Workers
+
+Control which tools workers can use and which workers the manager can delegate to:
+
+```typescript
+// Restrict specific tools from a worker
+const worker = {
+  name: 'researcher',
+  tools: [searchTool, writeTool, deleteTool],
+  restrictedTools: ['deleteTool'], // This worker cannot use deleteTool
+  // ... rest of config
+};
+
+// Restrict manager from delegating to specific workers
+const manager = {
+  name: 'project_manager',
+  restrictedWorkers: ['experimental_worker'], // Won't delegate to this worker
+  // ... rest of config
+};
+```
+
+### Manager Tools
+
+Managers can now have their own tools in addition to delegating to workers:
+
+```typescript
+const manager = {
+  name: 'smart_manager',
+  tools: [
+    {
+      name: 'check_status',
+      description: 'Check system status',
+      parameters: z.object({ system: z.string() }),
+    },
+  ],
+  toolImplementations: {
+    check_status: async (args) => {
+      // Manager's own tool implementation
+      return `Status of ${args.system}: OK`;
+    },
+  },
+  // ... rest of config
+};
+```
+
 ## Safety Features
 
-- **Iteration Limits**: Prevents infinite loops (Manager: 20, Workers: 15)
+- **Iteration Limits**: Prevents infinite loops (Manager: 20, Workers: 25, configurable)
+- **Context Window**: Automatic message history limiting to prevent memory issues
 - **Error Handling**: Graceful error catching at all levels
 - **Missing Tools**: Clear error messages when implementations are missing
+- **Restricted Access**: Fine-grained control over tool and worker access
 
 ## Contributing
 

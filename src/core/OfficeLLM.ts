@@ -173,6 +173,7 @@ class ManagerAgent {
   private contextWindow: number;
   private memory: IMemory;
   private instanceId: string;
+  private restrictedTools: string[];
 
   constructor(config: ManagerConfig, instanceId: string, memory: IMemory) {
     this.config = config;
@@ -181,6 +182,7 @@ class ManagerAgent {
     this.contextWindow = config.contextWindow || 10; // 10 messages
     this.instanceId = instanceId;
     this.memory = memory;
+    this.restrictedTools = config.restrictedTools || [];
   }
 
   async executeTask(task: Task, workers: Map<string, WorkerAgent>): Promise<TaskResult> {
@@ -199,10 +201,12 @@ class ManagerAgent {
     const workerTools = Array.from(workers.entries())
       .filter(([name]) => !this.config.restrictedWorkers || !this.config.restrictedWorkers.includes(name)) // filter out restricted workers
       .map(([name, worker]) => ({
-          name,
-          description: worker.config.description || `${name} agent`,
-          parameters: worker.getToolSchema(),
+        name,
+        description: worker.config.description || `${name} agent`,
+        parameters: worker.getToolSchema(),
       }));
+
+    const personalTools = this.config.tools?.filter(tool => !this.restrictedTools.includes(tool.name)) || [];
 
     let iteration = 0;
     let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -215,7 +219,7 @@ class ManagerAgent {
         // Apply context window limiting before making the API call
         const messagesToSend = this.applyContextWindow(messages);
 
-        const response = await this.provider.chat(messagesToSend, workerTools);
+        const response = await this.provider.chat(messagesToSend, [...personalTools, ...workerTools]);
 
         // Accumulate usage
         if (response.usage) {
@@ -230,12 +234,12 @@ class ManagerAgent {
         // If no tool calls, the manager has finished
         if (!response.toolCalls || response.toolCalls.length === 0) {
           logger.info('MANAGER', 'Task completed - no more tool calls needed');
-          
+
           // Store conversation in memory if available
           if (this.memory) {
             await this.storeConversation(messages);
           }
-          
+
           return {
             success: true,
             content: response.content,
@@ -244,25 +248,25 @@ class ManagerAgent {
         }
 
         // Add assistant message to history
-          messages.push({
-            role: 'assistant',
-            content: response.content,
-            toolCalls: response.toolCalls,
-          });
+        messages.push({
+          role: 'assistant',
+          content: response.content,
+          toolCalls: response.toolCalls,
+        });
 
         // Execute all tool calls (workers)
         for (const toolCall of response.toolCalls) {
           const worker = workers.get(toolCall.function.name);
-          
+
           if (worker && (!this.config.restrictedWorkers || !this.config.restrictedWorkers.includes(toolCall.function.name))) { // check if worker is not restricted
             logger.info('MANAGER', `Executing worker: ${toolCall.function.name}`);
             const workerParams = JSON.parse(toolCall.function.arguments);
             logger.debug('MANAGER', `Worker parameters: ${JSON.stringify(workerParams)}`);
-            
+
             const workerResult = await worker.execute(workerParams);
-            
+
             logger.debug('MANAGER', `Worker result: ${workerResult.content}`);
-            
+
             // Accumulate worker usage
             if (workerResult.usage) {
               totalUsage.promptTokens += workerResult.usage.promptTokens;
@@ -273,19 +277,31 @@ class ManagerAgent {
             // Add worker result as tool response
             messages.push({
               role: 'tool',
-              content: workerResult.success 
-                ? workerResult.content 
+              content: workerResult.success
+                ? workerResult.content
                 : `Error: ${workerResult.error}`,
               toolCallId: toolCall.id,
             });
+          } else if (personalTools.length > 0) {
+            if (this.config.toolImplementations) {
+              const toolImplementation = this.config.toolImplementations[toolCall.function.name]
+              logger.info('MANAGER', `Calling Personal tool: ${toolCall.function.name}`)
+              const toolResult = await toolImplementation(JSON.parse(toolCall.function.arguments))
+              logger.debug('MANAGER', `Personal tool Result: ${toolResult}`)
+              messages.push({
+                role: 'tool',
+                content: toolResult,
+                toolCallId: toolCall.id
+              })
+            }
           } else {
             // Worker not found - add error message
             logger.error('MANAGER', `Worker not found or restricted: ${toolCall.function.name}`);
-          messages.push({
-            role: 'tool',
+            messages.push({
+              role: 'tool',
               content: `Error: Worker '${toolCall.function.name}' not found or restricted`,
-            toolCallId: toolCall.id,
-          });
+              toolCallId: toolCall.id,
+            });
           }
         }
 
@@ -294,12 +310,12 @@ class ManagerAgent {
 
       // Max iterations reached
       logger.warn('MANAGER', `Maximum iterations (${this.maxIterations}) reached`);
-      
+
       // Store conversation in memory if available
       if (this.memory) {
         await this.storeConversation(messages);
       }
-      
+
       return {
         success: true,
         content: 'Task execution stopped: Maximum iterations reached. Partial results may be available.',
@@ -308,12 +324,12 @@ class ManagerAgent {
 
     } catch (error) {
       logger.error('MANAGER', 'Execution failed', error);
-      
+
       // Store conversation in memory even on error if available
       if (this.memory) {
         await this.storeConversation(messages);
       }
-      
+
       return {
         success: false,
         content: '',
@@ -334,11 +350,11 @@ class ManagerAgent {
 
     // Always keep the system message (first message)
     const systemMessage = messages[0];
-    
+
     // Get the most recent messages within the context window
     // We subtract 1 to account for the system message
     const recentMessages = messages.slice(-(this.contextWindow - 1));
-    
+
     return [systemMessage, ...recentMessages];
   }
 
@@ -382,6 +398,7 @@ class WorkerAgent {
   private contextWindow: number;
   private memory: IMemory;
   private instanceId: string;
+  private restrictedTools: string[];
 
   constructor(config: WorkerConfig, instanceId: string, memory: IMemory) {
     this.config = config;
@@ -391,7 +408,8 @@ class WorkerAgent {
     this.contextWindow = config.contextWindow || 10;
     this.memory = memory;
     this.instanceId = instanceId;
-    
+    this.restrictedTools = config.restrictedTools || [];
+
     // Initialize with system prompt
     this.messages.push({
       role: 'system',
@@ -422,7 +440,9 @@ class WorkerAgent {
         // Apply context window limiting before making the API call
         const messagesToSend = this.applyContextWindow();
 
-        const response = await this.provider.chat(messagesToSend, this.config.tools);
+        const tools = this.config.tools?.filter(tool => !this.restrictedTools.includes(tool.name));
+
+        const response = await this.provider.chat(messagesToSend, tools);
 
         // Accumulate usage
         if (response.usage) {
@@ -437,18 +457,18 @@ class WorkerAgent {
         // If no tool calls, the worker has finished
         if (!response.toolCalls || response.toolCalls.length === 0) {
           logger.info(`WORKER:${this.config.name}`, 'Completed - no more tool calls needed');
-          
+
           // Add final assistant message
           this.messages.push({
             role: 'assistant',
             content: response.content,
           });
-          
+
           // Store conversation in memory if available
           if (this.memory) {
             await this.storeConversation(this.messages);
           }
-          
+
           return {
             success: true,
             content: response.content,
@@ -466,12 +486,12 @@ class WorkerAgent {
         // Execute all tool calls
         for (const toolCall of response.toolCalls) {
           logger.info(`WORKER:${this.config.name}`, `Executing tool: ${toolCall.function.name}`);
-          
+
           const toolResult = await this.executeTool(
             toolCall.function.name,
             JSON.parse(toolCall.function.arguments)
           );
-          
+
           logger.debug(`WORKER:${this.config.name}`, `Tool result: ${toolResult}`);
 
           // Add tool result as tool response
@@ -484,15 +504,15 @@ class WorkerAgent {
 
         // Continue to next iteration - worker will decide what to do next
       }
-      
+
       // Max iterations reached
       logger.warn(`WORKER:${this.config.name}`, `Maximum iterations (${this.maxIterations}) reached`);
-      
+
       // Store conversation in memory if available
       if (this.memory) {
         await this.storeConversation(this.messages);
       }
-      
+
       return {
         success: true,
         content: 'Worker execution stopped: Maximum iterations reached. Partial results may be available.',
@@ -501,12 +521,12 @@ class WorkerAgent {
 
     } catch (error) {
       logger.error(`WORKER:${this.config.name}`, 'Execution failed', error);
-      
+
       // Store conversation in memory even on error if available
       if (this.memory) {
         await this.storeConversation(this.messages);
       }
-      
+
       return {
         success: false,
         content: '',
@@ -527,11 +547,11 @@ class WorkerAgent {
 
     // Always keep the system message (first message)
     const systemMessage = this.messages[0];
-    
+
     // Get the most recent messages within the context window
     // We subtract 1 to account for the system message
     const recentMessages = this.messages.slice(-(this.contextWindow - 1));
-    
+
     return [systemMessage, ...recentMessages];
   }
 

@@ -112,6 +112,9 @@ export interface ManagerConfig {
   systemPrompt: string;
   maxIterations?: number;
   contextWindow?: number;
+  tools?: ToolDefinition[];
+  toolImplementations?: Record<string, ToolImplementation>;
+  restrictedTools?: string[];
   restrictedWorkers?: string[];
 }
 
@@ -128,6 +131,7 @@ export interface WorkerConfig {
   provider: ProviderConfig;
   systemPrompt: string;
   tools?: ToolDefinition[];
+  restrictedTools?: string[];
   /**
    * Tool implementations - USER MUST PROVIDE
    * 
