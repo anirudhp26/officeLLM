@@ -209,7 +209,7 @@ class ManagerAgent {
     const personalTools = this.config.tools?.filter(tool => !this.restrictedTools.includes(tool.name)) || [];
 
     let iteration = 0;
-    let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    const totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
     try {
       while (iteration < this.maxIterations) {
@@ -430,7 +430,7 @@ class WorkerAgent {
     });
 
     let iteration = 0;
-    let totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    const totalUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
     try {
       while (iteration < this.maxIterations) {
