@@ -53,19 +53,19 @@ export interface IMemory {
   storeConversation(conversation: StoredConversation): Promise<void>;
 
   /**
-   * Retrieve a conversation by ID
+   * Retrieve a conversation - optionally by agent type and name
    */
-  getConversation(): Promise<StoredConversation | null>;
+  getConversation(agentType?: 'manager' | 'worker', agentName?: string): Promise<StoredConversation | null>;
 
   /**
    * Update an existing conversation
    */
-  updateConversation(messages: ProviderMessage[]): Promise<void>;
+  updateConversation(messages: ProviderMessage[], agentType?: 'manager' | 'worker', agentName?: string): Promise<void>;
 
   /**
    * Delete a conversation
    */
-  deleteConversation(): Promise<void>;
+  deleteConversation(agentType?: 'manager' | 'worker', agentName?: string): Promise<void>;
 
   /**
    * Query conversations with filters
@@ -104,9 +104,9 @@ export abstract class BaseMemory implements IMemory {
   }
 
   abstract storeConversation(conversation: StoredConversation): Promise<void>;
-  abstract getConversation(): Promise<StoredConversation | null>;
-  abstract updateConversation(messages: ProviderMessage[]): Promise<void>;
-  abstract deleteConversation(): Promise<void>;
+  abstract getConversation(agentType?: 'manager' | 'worker', agentName?: string): Promise<StoredConversation | null>;
+  abstract updateConversation(messages: ProviderMessage[], agentType?: 'manager' | 'worker', agentName?: string): Promise<void>;
+  abstract deleteConversation(agentType?: 'manager' | 'worker', agentName?: string): Promise<void>;
   abstract queryConversations(options?: QueryOptions): Promise<StoredConversation[]>;
   abstract clear(): Promise<void>;
   abstract getStats(): Promise<{
@@ -124,4 +124,3 @@ export abstract class BaseMemory implements IMemory {
     return this.config.type;
   }
 }
-

@@ -24,11 +24,25 @@ export class InMemoryStorage extends BaseMemory {
     this.instanceId = config.instanceId;
   }
 
+  /**
+   * Generate a unique conversation key based on instance, agent type, and agent name
+   * This ensures each agent has its own independent conversation storage
+   */
+  private getConversationKey(agentType?: string, agentName?: string): string {
+    if (agentType && agentName) {
+      return `${this.instanceId}:${agentType}:${agentName}`;
+    }
+    return this.instanceId;
+  }
+
   getMemoryInstance(): IMemory {
     return this;
   }
 
   async storeConversation(conversation: StoredConversation): Promise<void> {
+    // Generate unique key based on agent info
+    const key = this.getConversationKey(conversation.agentType, conversation.agentName);
+
     // If we've hit the limit, remove the oldest conversation
     if (this.conversations.size >= this.maxConversations) {
       const oldestId = this.findOldestConversation();
@@ -37,30 +51,33 @@ export class InMemoryStorage extends BaseMemory {
       }
     }
 
-    this.conversations.set(this.instanceId, {
+    this.conversations.set(key, {
       ...conversation,
       createdAt: new Date(conversation.createdAt),
       updatedAt: new Date(conversation.updatedAt),
     });
   }
 
-  async getConversation(): Promise<StoredConversation | null> {
-    const conversation = this.conversations.get(this.instanceId);
+  async getConversation(agentType?: 'manager' | 'worker', agentName?: string): Promise<StoredConversation | null> {
+    const key = this.getConversationKey(agentType, agentName);
+    const conversation = this.conversations.get(key);
     return conversation ? { ...conversation } : null;
   }
 
-  async updateConversation(messages: ProviderMessage[]): Promise<void> {
-    const conversation = this.conversations.get(this.instanceId);
+  async updateConversation(messages: ProviderMessage[], agentType?: 'manager' | 'worker', agentName?: string): Promise<void> {
+    const key = this.getConversationKey(agentType, agentName);
+    const conversation = this.conversations.get(key);
     if (!conversation) {
-      throw new Error(`Conversation with instanceId ${this.instanceId} not found`);
+      throw new Error(`Conversation with key ${key} not found`);
     }
 
     conversation.messages = messages;
     conversation.updatedAt = new Date();
   }
 
-  async deleteConversation(): Promise<void> {
-    this.conversations.delete(this.instanceId);
+  async deleteConversation(agentType?: 'manager' | 'worker', agentName?: string): Promise<void> {
+    const key = this.getConversationKey(agentType, agentName);
+    this.conversations.delete(key);
   }
 
   async queryConversations(options?: QueryOptions): Promise<StoredConversation[]> {
@@ -104,7 +121,7 @@ export class InMemoryStorage extends BaseMemory {
     newestConversation?: Date;
   }> {
     const conversations = Array.from(this.conversations.values());
-    
+
     const totalMessages = conversations.reduce(
       (sum, conv) => sum + conv.messages.length,
       0
@@ -114,7 +131,7 @@ export class InMemoryStorage extends BaseMemory {
     let newestConversation: Date | undefined;
 
     if (conversations.length > 0) {
-      const sorted = conversations.sort((a, b) => 
+      const sorted = conversations.sort((a, b) =>
         a.createdAt.getTime() - b.createdAt.getTime()
       );
       oldestConversation = sorted[0].createdAt;

@@ -254,11 +254,34 @@ class ManagerAgent {
           toolCalls: response.toolCalls,
         });
 
-        // Execute all tool calls (workers)
+        // Execute all tool calls (workers or personal tools)
         for (const toolCall of response.toolCalls) {
           const worker = workers.get(toolCall.function.name);
+          const isPersonalTool = personalTools.some(t => t.name === toolCall.function.name);
 
-          if (worker && (!this.config.restrictedWorkers || !this.config.restrictedWorkers.includes(toolCall.function.name))) { // check if worker is not restricted
+          // Check personal tools FIRST (manager's own tools take priority)
+          if (isPersonalTool && this.config.toolImplementations?.[toolCall.function.name]) {
+            logger.info('MANAGER', `Calling personal tool: ${toolCall.function.name}`);
+            try {
+              const toolResult = await this.config.toolImplementations[toolCall.function.name](
+                JSON.parse(toolCall.function.arguments)
+              );
+              logger.debug('MANAGER', `Personal tool result: ${toolResult}`);
+              messages.push({
+                role: 'tool',
+                content: toolResult,
+                toolCallId: toolCall.id,
+              });
+            } catch (error) {
+              logger.error('MANAGER', `Personal tool execution failed: ${toolCall.function.name}`, error);
+              messages.push({
+                role: 'tool',
+                content: `Error executing personal tool: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                toolCallId: toolCall.id,
+              });
+            }
+          } else if (worker && (!this.config.restrictedWorkers || !this.config.restrictedWorkers.includes(toolCall.function.name))) {
+            // Execute worker if not restricted
             logger.info('MANAGER', `Executing worker: ${toolCall.function.name}`);
             const workerParams = JSON.parse(toolCall.function.arguments);
             logger.debug('MANAGER', `Worker parameters: ${JSON.stringify(workerParams)}`);
@@ -282,24 +305,12 @@ class ManagerAgent {
                 : `Error: ${workerResult.error}`,
               toolCallId: toolCall.id,
             });
-          } else if (personalTools.length > 0) {
-            if (this.config.toolImplementations) {
-              const toolImplementation = this.config.toolImplementations[toolCall.function.name]
-              logger.info('MANAGER', `Calling Personal tool: ${toolCall.function.name}`)
-              const toolResult = await toolImplementation(JSON.parse(toolCall.function.arguments))
-              logger.debug('MANAGER', `Personal tool Result: ${toolResult}`)
-              messages.push({
-                role: 'tool',
-                content: toolResult,
-                toolCallId: toolCall.id
-              })
-            }
           } else {
-            // Worker not found - add error message
-            logger.error('MANAGER', `Worker not found or restricted: ${toolCall.function.name}`);
+            // Tool/Worker not found - add error message
+            logger.error('MANAGER', `Tool or worker not found or restricted: ${toolCall.function.name}`);
             messages.push({
               role: 'tool',
-              content: `Error: Worker '${toolCall.function.name}' not found or restricted`,
+              content: `Error: Tool or worker '${toolCall.function.name}' not found or restricted`,
               toolCallId: toolCall.id,
             });
           }
@@ -538,7 +549,8 @@ class WorkerAgent {
 
   /**
    * Apply context window limiting to prevent unbounded message growth
-   * Keeps system message and the most recent N messages
+   * Trims this.messages to keep only system message and the most recent N messages
+   * Returns the trimmed messages array for use in API calls
    */
   private applyContextWindow(): ProviderMessage[] {
     if (this.messages.length <= this.contextWindow) {
@@ -552,7 +564,12 @@ class WorkerAgent {
     // We subtract 1 to account for the system message
     const recentMessages = this.messages.slice(-(this.contextWindow - 1));
 
-    return [systemMessage, ...recentMessages];
+    // Actually trim the messages array to prevent unbounded growth
+    this.messages = [systemMessage, ...recentMessages];
+
+    logger.debug(`WORKER:${this.config.name}`, `Context window applied: kept ${this.messages.length} messages`);
+
+    return this.messages;
   }
 
   /**

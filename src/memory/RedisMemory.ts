@@ -60,7 +60,7 @@ export class RedisMemory extends BaseMemory {
       }
 
       logger.debug('REDIS', `Connecting to Redis at ${config.host}:${config.port}`);
-      
+
       this.client = createClient({
         url: url,
       });
@@ -94,10 +94,21 @@ export class RedisMemory extends BaseMemory {
     }
   }
 
+  /**
+   * Generate a unique conversation key based on instance, agent type, and agent name
+   * This ensures each agent has its own independent conversation storage
+   */
+  private getAgentConversationKey(agentType?: string, agentName?: string): string {
+    if (agentType && agentName) {
+      return `${this.keyPrefix}${this.instanceId}:${agentType}:${agentName}`;
+    }
+    return `${this.keyPrefix}${this.instanceId}`;
+  }
+
   async storeConversation(conversation: StoredConversation): Promise<void> {
     this.ensureConnected();
-    
-    const key = this.getConversationKey();
+
+    const key = this.getAgentConversationKey(conversation.agentType, conversation.agentName);
     const value = JSON.stringify({
       ...conversation,
       createdAt: conversation.createdAt.toISOString(),
@@ -114,10 +125,10 @@ export class RedisMemory extends BaseMemory {
     await this.addToIndex(conversation);
   }
 
-  async getConversation(): Promise<StoredConversation | null> {
+  async getConversation(agentType?: 'manager' | 'worker', agentName?: string): Promise<StoredConversation | null> {
     this.ensureConnected();
-    
-    const key = this.getConversationKey();
+
+    const key = this.getAgentConversationKey(agentType, agentName);
     const value = await this.client.get(key);
 
     if (!value) {
@@ -137,7 +148,7 @@ export class RedisMemory extends BaseMemory {
    */
   private async getConversationById(id: string): Promise<StoredConversation | null> {
     this.ensureConnected();
-    
+
     const key = `${this.keyPrefix}${id}`;
     const value = await this.client.get(key);
 
@@ -153,12 +164,13 @@ export class RedisMemory extends BaseMemory {
     };
   }
 
-  async updateConversation(messages: ProviderMessage[]): Promise<void> {
+  async updateConversation(messages: ProviderMessage[], agentType?: 'manager' | 'worker', agentName?: string): Promise<void> {
     this.ensureConnected();
-    
-    const conversation = await this.getConversation();
+
+    const conversation = await this.getConversation(agentType, agentName);
+    const key = this.getAgentConversationKey(agentType, agentName);
     if (!conversation) {
-      throw new Error(`Conversation with instanceId ${this.instanceId} not found`);
+      throw new Error(`Conversation with key ${key} not found`);
     }
 
     conversation.messages = messages;
@@ -167,21 +179,21 @@ export class RedisMemory extends BaseMemory {
     await this.storeConversation(conversation);
   }
 
-  async deleteConversation(): Promise<void> {
+  async deleteConversation(agentType?: 'manager' | 'worker', agentName?: string): Promise<void> {
     this.ensureConnected();
-    
-    const conversation = await this.getConversation();
+
+    const conversation = await this.getConversation(agentType, agentName);
     if (conversation) {
       await this.removeFromIndex(conversation);
     }
 
-    const key = this.getConversationKey();
+    const key = this.getAgentConversationKey(agentType, agentName);
     await this.client.del(key);
   }
 
   async queryConversations(options?: QueryOptions): Promise<StoredConversation[]> {
     this.ensureConnected();
-    
+
     // Get all conversation IDs from index
     let conversationIds: string[] = [];
 
@@ -199,7 +211,7 @@ export class RedisMemory extends BaseMemory {
       // Get all conversations
       const pattern = this.keyPrefix + '*';
       const keys = await this.client.keys(pattern);
-      conversationIds = keys.map((key: string) => 
+      conversationIds = keys.map((key: string) =>
         key.replace(this.keyPrefix, '')
       );
     }
@@ -234,11 +246,11 @@ export class RedisMemory extends BaseMemory {
 
   async clear(): Promise<void> {
     this.ensureConnected();
-    
+
     // Delete all conversation keys
     const pattern = this.keyPrefix + '*';
     const keys = await this.client.keys(pattern);
-    
+
     if (keys.length > 0) {
       await this.client.del(keys);
     }
@@ -246,7 +258,7 @@ export class RedisMemory extends BaseMemory {
     // Delete all index keys
     const indexPattern = this.keyPrefix + 'index:*';
     const indexKeys = await this.client.keys(indexPattern);
-    
+
     if (indexKeys.length > 0) {
       await this.client.del(indexKeys);
     }
@@ -259,9 +271,9 @@ export class RedisMemory extends BaseMemory {
     newestConversation?: Date;
   }> {
     this.ensureConnected();
-    
+
     const conversations = await this.queryConversations();
-    
+
     const totalMessages = conversations.reduce(
       (sum, conv) => sum + conv.messages.length,
       0
@@ -271,7 +283,7 @@ export class RedisMemory extends BaseMemory {
     let newestConversation: Date | undefined;
 
     if (conversations.length > 0) {
-      const sorted = conversations.sort((a, b) => 
+      const sorted = conversations.sort((a, b) =>
         a.createdAt.getTime() - b.createdAt.getTime()
       );
       oldestConversation = sorted[0].createdAt;
